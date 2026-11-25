@@ -1,4 +1,4 @@
-export type PageTheme = 'warm-paper' | 'lined-notebook' | 'night-mode';
+export type PageTheme = 'warm-paper' | 'lined-notebook';
 
 export interface FontOption {
   label: string;
@@ -12,7 +12,7 @@ export interface ColorSwatch {
 }
 
 export interface TextSizeOption {
-  id: 'small' | 'normal' | 'big' | 'title';
+  id: 'small' | 'normal' | 'big';
   label: string;
   value: string;
 }
@@ -41,13 +41,11 @@ export const TEXT_SIZES: TextSizeOption[] = [
   { id: 'small', label: 'Small', value: '15px' },
   { id: 'normal', label: 'Normal', value: '' },
   { id: 'big', label: 'Big', value: '24px' },
-  { id: 'title', label: 'Title', value: '32px' },
 ];
 
 export const PAGE_THEMES: { id: PageTheme; label: string }[] = [
   { id: 'warm-paper', label: 'Warm Paper' },
   { id: 'lined-notebook', label: 'Lined Notebook' },
-  { id: 'night-mode', label: 'Night Mode' },
 ];
 
 export const STORY_EMOJIS = [

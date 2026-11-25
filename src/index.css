@@ -31,23 +31,6 @@
   --page-border: #dcd5c5;
 }
 
-:root[data-theme="night-mode"] {
-  color-scheme: dark;
-  --desk-bg: #171c23;
-  --page-bg: #212731;
-  --page-border: #333c4a;
-  --page-shadow: 0 14px 40px -10px rgba(0, 0, 0, 0.55);
-  --ink: #f2ede2;
-  --ink-muted: #9aa3b2;
-  --toolbar-bg: rgba(30, 36, 45, 0.94);
-  --toolbar-border: #343d4b;
-  --control-bg: #2b3340;
-  --control-hover: #364050;
-  --control-active-bg: #3b82f6;
-  --control-active-text: #ffffff;
-  --accent: #60a5fa;
-}
-
 * {
   box-sizing: border-box;
 }

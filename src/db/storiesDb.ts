@@ -117,9 +117,7 @@ export async function initActiveStory(): Promise<{ active: StoryRecord; stories:
           theme: PageTheme;
         }>;
         const blank = createBlankStory(
-          parsed.theme === 'warm-paper' ||
-            parsed.theme === 'lined-notebook' ||
-            parsed.theme === 'night-mode'
+          parsed.theme === 'warm-paper' || parsed.theme === 'lined-notebook'
             ? parsed.theme
             : 'warm-paper',
           typeof parsed.fontFamily === 'string' ? parsed.fontFamily : FONTS[0].value

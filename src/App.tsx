@@ -38,7 +38,6 @@ import {
   spellcheckPluginKey,
   type ClickedSpellError,
 } from './extensions/SpellCheck';
-import { openStoryFromFile, saveStoryToFile } from './utils/fileHandlers';
 import {
   loadWhatsAppContacts,
   saveWhatsAppContacts,
@@ -265,10 +264,12 @@ export function App() {
     void initActiveStory().then(({ active, stories: all }) => {
       if (cancelled) return;
       skipNextSaveRef.current = true;
+      const normalizedTheme: PageTheme =
+        active.theme === 'lined-notebook' ? 'lined-notebook' : 'warm-paper';
       setStories(all);
       setActiveStory(active);
       setTitle(active.title);
-      setTheme(active.theme);
+      setTheme(normalizedTheme);
       setDefaultFont(active.fontFamily || FONTS[0].value);
       editor.commands.setContent(active.htmlContent || '<p></p>', false);
       setSaveStatus('saved');
@@ -312,7 +313,6 @@ export function App() {
       const colors: Record<PageTheme, string> = {
         'warm-paper': '#FBF7EE',
         'lined-notebook': '#FFFDF7',
-        'night-mode': '#212731',
       };
       themeColorMeta.setAttribute('content', colors[theme]);
     }
@@ -443,10 +443,12 @@ export function App() {
         window.clearTimeout(saveTimerRef.current);
       }
       skipNextSaveRef.current = true;
+      const normalizedTheme: PageTheme =
+        story.theme === 'lined-notebook' ? 'lined-notebook' : 'warm-paper';
       setActiveStory(story);
       setActiveStoryId(story.id);
       setTitle(story.title);
-      setTheme(story.theme);
+      setTheme(normalizedTheme);
       setDefaultFont(story.fontFamily || FONTS[0].value);
       editor.commands.setContent(story.htmlContent || '<p></p>', false);
       setSaveStatus('saved');
@@ -561,30 +563,6 @@ export function App() {
     }
   };
 
-  const handleSaveFile = async (format: 'html' | 'txt') => {
-    if (!editor) return;
-    await saveStoryToFile(title, editor.getHTML(), editor.getText(), defaultFont, format);
-  };
-
-  const handleOpenFile = async () => {
-    const opened = await openStoryFromFile();
-    if (!opened) return;
-    const imported: StoryRecord = {
-      ...createBlankStory(theme, defaultFont),
-      title: opened.title,
-      htmlContent: opened.htmlContent,
-      plainText: opened.plainText,
-    };
-    await saveStory(imported);
-    const updatedList = await getAllStories();
-    setStories(updatedList);
-    loadStoryIntoEditor(imported);
-  };
-
-  const handlePrint = () => {
-    window.print();
-  };
-
   const toggleFullscreen = async () => {
     try {
       if (!document.fullscreenElement) {
@@ -609,9 +587,6 @@ export function App() {
           theme={theme}
           onThemeChange={setTheme}
           onOpenStories={() => setIsDrawerOpen(true)}
-          onSaveFile={handleSaveFile}
-          onOpenFile={handleOpenFile}
-          onPrint={handlePrint}
           readAloudStatus={readAloudStatus}
           readAloudSpeed={readAloudSpeed}
           onReadPlayPause={handleReadPlayPause}
@@ -744,7 +719,7 @@ export function App() {
         onUpdateStoryIcon={handleUpdateStoryIcon}
         onDeleteStory={handleDeleteStory}
         onOpenParentSettings={() => setIsParentSettingsOpen(true)}
-        isNightMode={theme === 'night-mode'}
+        isNightMode={false}
       />
 
       {/* Parent Settings Modal (4-digit PIN) */}

@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/react';
 import {
   AlignCenter,
@@ -6,17 +5,13 @@ import {
   Bold,
   BookOpen,
   Check,
-  Download,
   EyeOff,
-  FolderOpen,
   Italic,
   Maximize2,
   Minimize2,
-  Moon,
   Notebook,
   Pause,
   Play,
-  Printer,
   Share2,
   Square,
   Sun,
@@ -41,9 +36,6 @@ interface ToolbarProps {
   theme: PageTheme;
   onThemeChange: (theme: PageTheme) => void;
   onOpenStories: () => void;
-  onSaveFile: (format: 'html' | 'txt') => void;
-  onOpenFile: () => void;
-  onPrint: () => void;
   readAloudStatus: ReadAloudStatus;
   readAloudSpeed: ReadAloudSpeed;
   onReadPlayPause: () => void;
@@ -63,9 +55,6 @@ export function Toolbar({
   theme,
   onThemeChange,
   onOpenStories,
-  onSaveFile,
-  onOpenFile,
-  onPrint,
   readAloudStatus,
   readAloudSpeed,
   onReadPlayPause,
@@ -77,20 +66,6 @@ export function Toolbar({
   isFullscreen,
   onToggleFullscreen,
 }: ToolbarProps) {
-  const [saveMenuOpen, setSaveMenuOpen] = useState(false);
-  const saveMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!saveMenuOpen) return;
-    const handleOutside = (e: MouseEvent) => {
-      if (saveMenuRef.current && !saveMenuRef.current.contains(e.target as Node)) {
-        setSaveMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleOutside);
-    return () => document.removeEventListener('mousedown', handleOutside);
-  }, [saveMenuOpen]);
-
   if (!editor) {
     return null;
   }
@@ -126,8 +101,7 @@ export function Toolbar({
 
   const themeIcon = (id: PageTheme) => {
     if (id === 'warm-paper') return <Sun className="h-4 w-4" aria-hidden="true" />;
-    if (id === 'lined-notebook') return <Notebook className="h-4 w-4" aria-hidden="true" />;
-    return <Moon className="h-4 w-4" aria-hidden="true" />;
+    return <Notebook className="h-4 w-4" aria-hidden="true" />;
   };
 
   return (
@@ -316,85 +290,6 @@ export function Toolbar({
                 </button>
               );
             })}
-          </div>
-
-          <Divider />
-
-          {/* Save to File, Open File, Print / Save PDF */}
-          <div className="flex items-center gap-1.5">
-            <div ref={saveMenuRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setSaveMenuOpen((prev) => !prev)}
-                aria-expanded={saveMenuOpen}
-                title="Save to File (.html or .txt)"
-                style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
-                className="flex h-10 cursor-pointer items-center gap-1.5 rounded-xl px-2.5 text-sm font-semibold transition hover:opacity-90"
-              >
-                <Download className="h-4 w-4" aria-hidden="true" />
-                <span className="hidden lg:inline">Save to File</span>
-              </button>
-
-              {saveMenuOpen && (
-                <div
-                  style={{
-                    backgroundColor: 'var(--page-bg)',
-                    borderColor: 'var(--toolbar-border)',
-                    color: 'var(--ink)',
-                  }}
-                  className="absolute right-0 z-50 mt-1.5 w-52 rounded-xl border p-1.5 shadow-xl"
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSaveMenuOpen(false);
-                      onSaveFile('html');
-                    }}
-                    className="flex w-full cursor-pointer flex-col rounded-lg px-3 py-2 text-left transition hover:bg-blue-500/10"
-                  >
-                    <span className="text-sm font-bold">Story (.html)</span>
-                    <span className="text-xs" style={{ color: 'var(--ink-muted)' }}>
-                      Keeps colors &amp; fonts
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSaveMenuOpen(false);
-                      onSaveFile('txt');
-                    }}
-                    className="flex w-full cursor-pointer flex-col rounded-lg px-3 py-2 text-left transition hover:bg-blue-500/10"
-                  >
-                    <span className="text-sm font-bold">Plain Text (.txt)</span>
-                    <span className="text-xs" style={{ color: 'var(--ink-muted)' }}>
-                      Simple text only
-                    </span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={onOpenFile}
-              title="Open .html or .txt file"
-              style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
-              className="flex h-10 cursor-pointer items-center gap-1.5 rounded-xl px-2.5 text-sm font-semibold transition hover:opacity-90"
-            >
-              <FolderOpen className="h-4 w-4" aria-hidden="true" />
-              <span className="hidden lg:inline">Open File</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onPrint}
-              title="Print or Save as PDF"
-              style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
-              className="flex h-10 cursor-pointer items-center gap-1.5 rounded-xl px-2.5 text-sm font-semibold transition hover:opacity-90"
-            >
-              <Printer className="h-4 w-4" aria-hidden="true" />
-              <span className="hidden xl:inline">Print / Save PDF</span>
-            </button>
           </div>
 
           <Divider />
