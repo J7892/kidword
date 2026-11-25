@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Extension } from '@tiptap/core';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
-import type { Transaction } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
 import { SpellCheck, type ClickedSpellError } from '../extensions/SpellCheck';
 
@@ -11,8 +10,6 @@ interface StoryTitleEditorProps {
   onFocusBody: () => void;
   onWordClick: (error: ClickedSpellError) => void;
   onScheduleSpellCheck: () => void;
-  onTitleSelectionUpdate: (editor: Editor) => void;
-  onTitleTransaction: (editor: Editor, transaction: Transaction) => void;
   onEditorReady: (editor: Editor | null) => void;
 }
 
@@ -22,16 +19,12 @@ export function StoryTitleEditor({
   onFocusBody,
   onWordClick,
   onScheduleSpellCheck,
-  onTitleSelectionUpdate,
-  onTitleTransaction,
   onEditorReady,
 }: StoryTitleEditorProps) {
   const onChangeRef = useRef(onChange);
   const onFocusBodyRef = useRef(onFocusBody);
   const onWordClickRef = useRef(onWordClick);
   const onScheduleSpellCheckRef = useRef(onScheduleSpellCheck);
-  const onSelectionUpdateRef = useRef(onTitleSelectionUpdate);
-  const onTransactionRef = useRef(onTitleTransaction);
   const syncingExternalRef = useRef(false);
 
   useEffect(() => {
@@ -39,8 +32,6 @@ export function StoryTitleEditor({
     onFocusBodyRef.current = onFocusBody;
     onWordClickRef.current = onWordClick;
     onScheduleSpellCheckRef.current = onScheduleSpellCheck;
-    onSelectionUpdateRef.current = onTitleSelectionUpdate;
-    onTransactionRef.current = onTitleTransaction;
   });
 
   const titleEditor = useEditor({
@@ -107,15 +98,11 @@ export function StoryTitleEditor({
       }
       onScheduleSpellCheckRef.current();
     },
-    onSelectionUpdate: ({ editor }) => {
+    onSelectionUpdate: () => {
       onScheduleSpellCheckRef.current();
-      onSelectionUpdateRef.current(editor);
     },
     onBlur: () => {
       onScheduleSpellCheckRef.current();
-    },
-    onTransaction: ({ editor, transaction }) => {
-      onTransactionRef.current(editor, transaction);
     },
   });
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2,
   Eye,
@@ -15,6 +15,7 @@ interface SpellingDetectivePopoverProps {
   error: ClickedSpellError | null;
   allowPeek: boolean;
   onClose: () => void;
+  onReplaceWord: (error: ClickedSpellError, replacement: string) => void;
   onAddPersonalWord: (word: string) => void;
   onRequestPhoneticLookup: (word: string, exclude?: string) => Promise<string[]>;
 }
@@ -49,14 +50,36 @@ interface WindowWithSpeechRecognition extends Window {
 }
 
 type TypedLetterStatus = 'correct' | 'present' | 'absent';
+type SlotFlashStatus = 'none' | 'present' | 'wrong';
+
+interface WorkbenchSlot {
+  targetChar: string;
+  value: string;
+  locked: boolean;
+  flash: SlotFlashStatus;
+}
 
 const VOWELS = new Set(['a', 'e', 'i', 'o', 'u', 'y']);
+const VALID_SLOT_CHAR = /^[a-zA-ZÀ-ÖØ-öø-ÿ'’-]$/;
+
+function normalizeChar(ch: string): string {
+  return ch.replace('’', "'").toLowerCase();
+}
+
+function formatSlotChar(typedChar: string, targetChar: string): string {
+  const norm = typedChar.replace('’', "'");
+  if (targetChar === '’' && norm === "'") return '’';
+  if (
+    targetChar === targetChar.toUpperCase() &&
+    targetChar !== targetChar.toLowerCase()
+  ) {
+    return norm.toUpperCase();
+  }
+  return norm.toLowerCase();
+}
 
 /**
- * Standard two-pass Wordle evaluation of the child's typed letters against the target word:
- * - 'correct' (green): exact letter in the exact position
- * - 'present' (amber/yellow): right letter in the word, wrong position (respecting duplicate counts)
- * - 'absent' (rose): letter not needed
+ * Standard two-pass Wordle evaluation of the child's original typed word against the target word.
  */
 function evaluateTypedLetters(
   typed: string,
@@ -68,23 +91,21 @@ function evaluateTypedLetters(
   const remainingCounts = new Map<string, number>();
 
   for (const ch of targetChars) {
-    const lower = ch.toLowerCase();
+    const lower = normalizeChar(ch);
     remainingCounts.set(lower, (remainingCounts.get(lower) ?? 0) + 1);
   }
 
-  // Pass 1: exact-position green matches
   for (let i = 0; i < typedChars.length; i++) {
-    if (i < targetChars.length && typedChars[i].toLowerCase() === targetChars[i].toLowerCase()) {
+    if (i < targetChars.length && normalizeChar(typedChars[i]) === normalizeChar(targetChars[i])) {
       statuses[i] = 'correct';
-      const lower = typedChars[i].toLowerCase();
+      const lower = normalizeChar(typedChars[i]);
       remainingCounts.set(lower, (remainingCounts.get(lower) ?? 1) - 1);
     }
   }
 
-  // Pass 2: misplaced yellow matches
   for (let i = 0; i < typedChars.length; i++) {
     if (statuses[i] === 'correct') continue;
-    const lower = typedChars[i].toLowerCase();
+    const lower = normalizeChar(typedChars[i]);
     const available = remainingCounts.get(lower) ?? 0;
     if (available > 0) {
       statuses[i] = 'present';
@@ -95,27 +116,143 @@ function evaluateTypedLetters(
   return typedChars.map((char, idx) => ({ char, status: statuses[idx] }));
 }
 
+/**
+ * Builds the initial interactive slots for a target word:
+ * - Always provides & locks the 1st letter (idx === 0)
+ * - Locks any letters the child already placed in the exact right position
+ * - Guarantees at least 1 unlocked blank remains so the word is never auto-solved on open
+ */
+function buildInitialSlots(typed: string, target: string): WorkbenchSlot[] {
+  const slots: WorkbenchSlot[] = target.split('').map((targetChar, idx) => {
+    const typedChar = typed[idx];
+    const isMatched =
+      typedChar !== undefined && normalizeChar(typedChar) === normalizeChar(targetChar);
+    const locked = idx === 0 || isMatched;
+    return {
+      targetChar,
+      value: locked ? targetChar : '',
+      locked,
+      flash: 'none',
+    };
+  });
+
+  // Ensure at least 1 blank remains for the child to type (while keeping idx === 0 locked)
+  if (slots.length > 1 && slots.every((s) => s.locked)) {
+    const lastIdx = slots.length - 1;
+    slots[lastIdx] = {
+      ...slots[lastIdx],
+      value: '',
+      locked: false,
+    };
+  }
+
+  return slots;
+}
+
 export function SpellingDetectivePopover({
   error,
   allowPeek,
   onClose,
+  onReplaceWord,
   onAddPersonalWord,
   onRequestPhoneticLookup,
 }: SpellingDetectivePopoverProps) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const slotRefs = useRef<Array<HTMLInputElement | null>>([]);
   const recognitionRef = useRef<SpeechRecognitionInstanceLike | null>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const feedbackTimerRef = useRef<number | null>(null);
+  const solveTimerRef = useRef<number | null>(null);
 
   const [lockedTarget, setLockedTarget] = useState<string | null>(null);
+  const [slots, setSlots] = useState<WorkbenchSlot[]>([]);
+  const [yellowClueLetters, setYellowClueLetters] = useState<string[]>([]);
+  const [feedbackMsg, setFeedbackMsg] = useState('');
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  const [isShaking, setIsShaking] = useState(false);
+  const [isSolved, setIsSolved] = useState(false);
+
   const [audioCandidates, setAudioCandidates] = useState<string[]>([]);
   const [showNotRightMenu, setShowNotRightMenu] = useState(false);
   const [isLookingUp, setIsLookingUp] = useState(false);
-  const [step2Unlocked, setStep2Unlocked] = useState(false);
   const [peekSecondsLeft, setPeekSecondsLeft] = useState<number | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [voiceError, setVoiceError] = useState('');
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+
+  const clearTimers = useCallback(() => {
+    if (feedbackTimerRef.current !== null) {
+      window.clearTimeout(feedbackTimerRef.current);
+      feedbackTimerRef.current = null;
+    }
+    if (solveTimerRef.current !== null) {
+      window.clearTimeout(solveTimerRef.current);
+      solveTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => clearTimers();
+  }, [clearTimers]);
+
+  const focusSlot = useCallback((idx: number) => {
+    requestAnimationFrame(() => {
+      const el = slotRefs.current[idx];
+      if (el && !el.disabled) {
+        el.focus();
+        el.select();
+      }
+    });
+  }, []);
+
+  const focusFirstEmptySlot = useCallback(
+    (currentSlots: WorkbenchSlot[]) => {
+      const firstEmpty = currentSlots.findIndex((s) => !s.locked && !s.value);
+      const fallbackUnlocked = currentSlots.findIndex((s) => !s.locked);
+      const targetIdx = firstEmpty !== -1 ? firstEmpty : fallbackUnlocked;
+      if (targetIdx !== -1) {
+        focusSlot(targetIdx);
+      }
+    },
+    [focusSlot]
+  );
+
+  const initializeWorkbench = useCallback(
+    (typedWord: string, nextTarget: string | null) => {
+      clearTimers();
+      setIsEvaluating(false);
+      setIsShaking(false);
+      setIsSolved(false);
+      setFeedbackMsg('');
+      setPeekSecondsLeft(null);
+
+      if (!nextTarget) {
+        setLockedTarget(null);
+        setSlots([]);
+        setYellowClueLetters([]);
+        return;
+      }
+
+      setLockedTarget(nextTarget);
+      const initialSlots = buildInitialSlots(typedWord, nextTarget);
+      setSlots(initialSlots);
+
+      // Seed yellow clues from any misplaced letters in the child's original typed word
+      const initialEval = evaluateTypedLetters(typedWord, nextTarget);
+      const initialYellows = Array.from(
+        new Set(
+          initialEval
+            .filter((item) => item.status === 'present')
+            .map((item) => item.char.toLowerCase())
+        )
+      );
+      setYellowClueLetters(initialYellows);
+
+      focusFirstEmptySlot(initialSlots);
+    },
+    [clearTimers, focusFirstEmptySlot]
   );
 
   // Track online/offline status for voice fallback visibility
@@ -130,60 +267,64 @@ export function SpellingDetectivePopover({
     };
   }, []);
 
-  // Reset hint state only when a different misspelled word is clicked (by id)
+  // Reset workbench when a misspelled word is clicked
   useEffect(() => {
     recognitionRef.current?.stop();
     recognitionRef.current = null;
     setIsListening(false);
     setVoiceError('');
-    setStep2Unlocked(false);
-    setPeekSecondsLeft(null);
     setShowNotRightMenu(false);
     setIsLookingUp(false);
 
     if (!error) {
-      setLockedTarget(null);
+      initializeWorkbench('', null);
       setAudioCandidates([]);
       return;
     }
 
     if (error.phoneticCandidates.length >= 2) {
-      setLockedTarget(null);
+      initializeWorkbench(error.word, null);
       setAudioCandidates(error.phoneticCandidates.slice(0, 3));
     } else {
-      setLockedTarget(error.suggestion ?? error.phoneticCandidates[0] ?? null);
+      const nextTarget = error.suggestion ?? error.phoneticCandidates[0] ?? null;
       setAudioCandidates([]);
+      initializeWorkbench(error.word, nextTarget);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [error?.id]);
 
-  // Handle 3-second peek countdown
+  // Handle 3-second peek countdown & refocus first empty box when peek finishes
   useEffect(() => {
     if (peekSecondsLeft === null) return;
     if (peekSecondsLeft <= 0) {
       setPeekSecondsLeft(null);
+      focusFirstEmptySlot(slots);
       return;
     }
     const timer = window.setTimeout(() => {
-      setPeekSecondsLeft((prev) => (prev !== null && prev > 1 ? prev - 1 : null));
+      setPeekSecondsLeft((prev) => {
+        if (prev !== null && prev > 1) return prev - 1;
+        requestAnimationFrame(() => focusFirstEmptySlot(slots));
+        return null;
+      });
     }, 1000);
     return () => window.clearTimeout(timer);
-  }, [peekSecondsLeft]);
+  }, [peekSecondsLeft, focusFirstEmptySlot, slots]);
 
-  // Close on Escape or outside click
+  // Close on Escape or clicking outside the card
   useEffect(() => {
     if (!error) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault();
         onClose();
       }
     };
     const handlePointerDown = (e: PointerEvent) => {
       if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
         const targetEl = e.target as HTMLElement | null;
-        // Keep the card open while clicking inside the editor or title to type the fix
-        if (!targetEl?.closest?.('.spell-error') && !targetEl?.closest?.('.ProseMirror')) {
+        if (!targetEl?.closest?.('.spell-error')) {
           onClose();
         }
       }
@@ -199,14 +340,14 @@ export function SpellingDetectivePopover({
 
   const positionStyle = useMemo(() => {
     if (!error) return {};
-    const cardWidth = 352;
+    const cardWidth = 368;
     const margin = 12;
     const viewportW = typeof window !== 'undefined' ? window.innerWidth : 1024;
     const viewportH = typeof window !== 'undefined' ? window.innerHeight : 768;
 
     const left = Math.max(margin, Math.min(error.rect.left, viewportW - cardWidth - margin));
-    const showAbove = error.rect.bottom + 360 > viewportH && error.rect.top > 360;
-    const top = showAbove ? Math.max(margin, error.rect.top - 348) : error.rect.bottom + 10;
+    const showAbove = error.rect.bottom + 380 > viewportH && error.rect.top > 380;
+    const top = showAbove ? Math.max(margin, error.rect.top - 368) : error.rect.bottom + 10;
 
     return { left: `${left}px`, top: `${top}px`, width: `${cardWidth}px` };
   }, [error]);
@@ -214,65 +355,220 @@ export function SpellingDetectivePopover({
   const typed = error?.word ?? '';
   const target = lockedTarget;
   const isPeeking = peekSecondsLeft !== null && peekSecondsLeft > 0;
-  const isSolved = Boolean(
-    target && typed.trim().length > 0 && typed.trim().toLowerCase() === target.toLowerCase()
-  );
-
-  // Auto-close briefly after the child finishes spelling the word right
-  useEffect(() => {
-    if (!isSolved) return;
-    const timer = window.setTimeout(() => {
-      onClose();
-    }, 1400);
-    return () => window.clearTimeout(timer);
-  }, [isSolved, onClose]);
 
   const typedTiles = useMemo(() => {
     if (!target || !typed) return [];
     return evaluateTypedLetters(typed, target);
   }, [typed, target]);
 
-  const tiles = useMemo(() => {
-    if (!target) return [];
+  const unlockedCount = useMemo(
+    () => slots.filter((s) => !s.locked).length,
+    [slots]
+  );
 
-    // First pass: letters the child already matched in the right position + first letter
-    const revealed = target.split('').map((char, idx) => {
-      const typedChar = typed[idx];
-      const isMatched =
-        typedChar !== undefined && typedChar.toLowerCase() === char.toLowerCase();
-      return {
-        char,
-        isMatched,
-        isRevealed: isPeeking || idx === 0 || isMatched,
-      };
-    });
+  const evaluateAttempt = useCallback(
+    (candidateSlots: WorkbenchSlot[]) => {
+      if (!error || !target) return;
 
-    const countBlanks = () => revealed.filter((t) => !t.isRevealed).length;
+      const allMatch = candidateSlots.every(
+        (s) => normalizeChar(s.value) === normalizeChar(s.targetChar)
+      );
 
-    // Reveal the last letter in Step 1 only if at least 2 blanks remain,
-    // so we never give away the entire word in Step 1.
-    const lastIdx = target.length - 1;
-    if (lastIdx > 0 && !revealed[lastIdx].isRevealed && countBlanks() >= 2) {
-      revealed[lastIdx].isRevealed = true;
-    }
+      if (allMatch) {
+        const solvedSlots = candidateSlots.map((s) => ({
+          ...s,
+          value: s.targetChar,
+          locked: true,
+          flash: 'none' as const,
+        }));
+        setSlots(solvedSlots);
+        setIsSolved(true);
+        setFeedbackMsg('');
+        solveTimerRef.current = window.setTimeout(() => {
+          onReplaceWord(error, target);
+        }, 850);
+        return;
+      }
 
-    // Step 2: reveal vowels / middle tricky letters while keeping at least 1 blank
-    // (the full word is reserved for Step 3: 3-Second Peek).
-    if (step2Unlocked && !isPeeking) {
-      for (let idx = 1; idx < target.length - 1; idx++) {
-        if (countBlanks() <= 1) break;
-        const ch = target[idx].toLowerCase();
-        const isMiddle =
-          idx === Math.floor(target.length / 2) ||
-          idx === Math.floor((target.length - 1) / 2);
-        if (!revealed[idx].isRevealed && (VOWELS.has(ch) || isMiddle)) {
-          revealed[idx].isRevealed = true;
+      // Partial match: lock newly right letters green, flash misplaced yellow & wrong rose
+      const remainingPool = new Map<string, number>();
+      const nextSlots: WorkbenchSlot[] = candidateSlots.map((s) => {
+        if (s.locked || normalizeChar(s.value) === normalizeChar(s.targetChar)) {
+          return {
+            ...s,
+            value: s.targetChar,
+            locked: true,
+            flash: 'none',
+          };
+        }
+        const lowerTarget = normalizeChar(s.targetChar);
+        remainingPool.set(lowerTarget, (remainingPool.get(lowerTarget) ?? 0) + 1);
+        return { ...s };
+      });
+
+      const discoveredYellows = new Set<string>();
+      for (let i = 0; i < nextSlots.length; i++) {
+        if (nextSlots[i].locked) continue;
+        const lowerTyped = normalizeChar(nextSlots[i].value);
+        const avail = remainingPool.get(lowerTyped) ?? 0;
+        if (avail > 0) {
+          nextSlots[i].flash = 'present';
+          remainingPool.set(lowerTyped, avail - 1);
+          discoveredYellows.add(lowerTyped);
+        } else {
+          nextSlots[i].flash = 'wrong';
         }
       }
+
+      setSlots(nextSlots);
+      setYellowClueLetters(Array.from(discoveredYellows));
+      setFeedbackMsg(
+        discoveredYellows.size > 0
+          ? 'Almost! Yellow letters go in a different box.'
+          : 'Good try! Fill in the remaining blanks.'
+      );
+      setIsEvaluating(true);
+      setIsShaking(true);
+
+      feedbackTimerRef.current = window.setTimeout(() => {
+        setIsShaking(false);
+        setIsEvaluating(false);
+        setSlots((curr) => {
+          const cleared = curr.map((s) =>
+            s.locked ? s : { ...s, value: '', flash: 'none' as const }
+          );
+          focusFirstEmptySlot(cleared);
+          return cleared;
+        });
+      }, 720);
+    },
+    [error, focusFirstEmptySlot, onReplaceWord, target]
+  );
+
+  const handleCharacterEntry = (idx: number, rawChar: string) => {
+    if (isSolved || isEvaluating || isPeeking) return;
+    if (!VALID_SLOT_CHAR.test(rawChar)) return;
+
+    const slot = slots[idx];
+    if (!slot || slot.locked) return;
+
+    const formatted = formatSlotChar(rawChar, slot.targetChar);
+    const nextSlots = slots.map((s, i) =>
+      i === idx ? { ...s, value: formatted, flash: 'none' as const } : s
+    );
+    setSlots(nextSlots);
+    setFeedbackMsg('');
+
+    const allFilled = nextSlots.every((s) => s.locked || s.value.length > 0);
+    if (allFilled) {
+      evaluateAttempt(nextSlots);
+      return;
     }
 
-    return revealed;
-  }, [target, typed, isPeeking, step2Unlocked]);
+    // Advance to the next empty unlocked box (or next unlocked box)
+    const nextEmptyAfter = nextSlots.findIndex((s, i) => i > idx && !s.locked && !s.value);
+    const nextEmptyAny = nextSlots.findIndex((s) => !s.locked && !s.value);
+    const nextUnlockedAfter = nextSlots.findIndex((s, i) => i > idx && !s.locked);
+    const dest =
+      nextEmptyAfter !== -1
+        ? nextEmptyAfter
+        : nextEmptyAny !== -1
+          ? nextEmptyAny
+          : nextUnlockedAfter;
+    if (dest !== -1) {
+      focusSlot(dest);
+    }
+  };
+
+  const handleSlotKeyDown = (idx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (isSolved || isEvaluating || isPeeking) return;
+
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      onClose();
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (slots.every((s) => s.locked || s.value.length > 0)) {
+        evaluateAttempt(slots);
+      } else {
+        focusFirstEmptySlot(slots);
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      for (let i = idx - 1; i >= 0; i--) {
+        if (!slots[i].locked) {
+          focusSlot(i);
+          break;
+        }
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      for (let i = idx + 1; i < slots.length; i++) {
+        if (!slots[i].locked) {
+          focusSlot(i);
+          break;
+        }
+      }
+      return;
+    }
+
+    if (e.key === 'Backspace') {
+      e.preventDefault();
+      setFeedbackMsg('');
+      if (slots[idx].value !== '') {
+        setSlots((curr) =>
+          curr.map((s, i) => (i === idx ? { ...s, value: '', flash: 'none' } : s))
+        );
+      } else {
+        for (let i = idx - 1; i >= 0; i--) {
+          if (!slots[i].locked) {
+            setSlots((curr) =>
+              curr.map((s, j) => (j === i ? { ...s, value: '', flash: 'none' } : s))
+            );
+            focusSlot(i);
+            break;
+          }
+        }
+      }
+      return;
+    }
+
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      handleCharacterEntry(idx, e.key);
+    }
+  };
+
+  // Reveal 1 helpful letter per click while keeping at least 1 blank for the child
+  const handleRevealOneHint = () => {
+    if (isSolved || isEvaluating || isPeeking) return;
+    const unlockedIndices = slots
+      .map((s, i) => (!s.locked ? i : -1))
+      .filter((i) => i !== -1);
+    if (unlockedIndices.length < 2) return;
+
+    const vowelIdx = unlockedIndices.find((i) =>
+      VOWELS.has(slots[i].targetChar.toLowerCase())
+    );
+    const pickIdx = vowelIdx ?? unlockedIndices[0];
+
+    const nextSlots = slots.map((s, i) =>
+      i === pickIdx
+        ? { ...s, value: s.targetChar, locked: true, flash: 'none' as const }
+        : s
+    );
+    setSlots(nextSlots);
+    focusFirstEmptySlot(nextSlots);
+  };
 
   if (!error) return null;
 
@@ -285,7 +581,7 @@ export function SpellingDetectivePopover({
       : undefined;
   const canUseVoice = Boolean(SpeechRecognitionCtor) && isOnline;
 
-  const speakWord = (wordToSpeak: string) => {
+  const speakWord = (wordToSpeak: string, refocusBoxes = false) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(wordToSpeak);
@@ -293,6 +589,9 @@ export function SpellingDetectivePopover({
     utterance.rate = 0.9;
     utteranceRef.current = utterance;
     window.speechSynthesis.speak(utterance);
+    if (refocusBoxes) {
+      focusFirstEmptySlot(slots);
+    }
   };
 
   const handleNotRightWord = async () => {
@@ -302,12 +601,10 @@ export function SpellingDetectivePopover({
       const candidates = await onRequestPhoneticLookup(typed, target ?? undefined);
       setAudioCandidates(candidates);
       if (candidates.length >= 2) {
-        setLockedTarget(null);
+        initializeWorkbench(typed, null);
       } else if (candidates.length === 1) {
-        setLockedTarget(candidates[0]);
-        setStep2Unlocked(false);
-        setPeekSecondsLeft(null);
         setShowNotRightMenu(false);
+        initializeWorkbench(typed, candidates[0]);
       }
     } finally {
       setIsLookingUp(false);
@@ -331,15 +628,13 @@ export function SpellingDetectivePopover({
       const firstWord = transcript
         .trim()
         .split(/\s+/)[0]
-        ?.replace(/[^a-zA-ZÀ-ÖØ-öø-ÿ'-]/g, '');
+        ?.replace(/[^a-zA-ZÀ-ÖØ-öø-ÿ'’-]/g, '');
 
       setIsListening(false);
       if (firstWord && firstWord.length >= 2) {
-        setLockedTarget(firstWord);
         setAudioCandidates([]);
         setShowNotRightMenu(false);
-        setStep2Unlocked(false);
-        setPeekSecondsLeft(null);
+        initializeWorkbench(typed, firstWord);
       } else {
         setVoiceError("Didn't catch a word — try again!");
       }
@@ -366,7 +661,7 @@ export function SpellingDetectivePopover({
     <div
       ref={cardRef}
       role="dialog"
-      aria-label="Spelling Detective hints"
+      aria-label="Spelling Detective word workbench"
       style={{
         ...positionStyle,
         backgroundColor: 'var(--page-bg)',
@@ -394,13 +689,13 @@ export function SpellingDetectivePopover({
         </button>
       </div>
 
-      {/* Wordle-style "You typed" tiles when a target word is active, otherwise badge */}
+      {/* Original word Wordle clue strip */}
       {target && typedTiles.length > 0 ? (
         <div className="mt-2.5">
           <p className="mb-1 text-[11px] font-bold" style={{ color: 'var(--ink-muted)' }}>
-            Your letters:
+            You wrote:
           </p>
-          <div className="flex flex-wrap items-center gap-1" aria-label={`You typed ${typed}`}>
+          <div className="flex flex-wrap items-center gap-1" aria-label={`You wrote ${typed}`}>
             {typedTiles.map((item, idx) => (
               <span
                 key={idx}
@@ -411,11 +706,11 @@ export function SpellingDetectivePopover({
                       ? 'In the word, wrong spot!'
                       : 'Not needed in this word'
                 }
-                className={`inline-flex h-7 min-w-[1.65rem] items-center justify-center rounded-md px-1 text-sm font-bold transition ${
+                className={`inline-flex h-6 min-w-[1.45rem] items-center justify-center rounded-md px-1 text-xs font-bold ${
                   item.status === 'correct'
-                    ? 'border-2 border-emerald-600 bg-emerald-500 text-white'
+                    ? 'border border-emerald-600 bg-emerald-500 text-white'
                     : item.status === 'present'
-                      ? 'border-2 border-dashed border-amber-500 bg-amber-200 text-amber-950'
+                      ? 'border border-dashed border-amber-500 bg-amber-200 text-amber-950'
                       : 'border border-rose-300 bg-rose-50 text-rose-800 line-through decoration-rose-400/75'
                 }`}
               >
@@ -426,7 +721,7 @@ export function SpellingDetectivePopover({
         </div>
       ) : (
         <p className="mt-2 text-xs font-semibold" style={{ color: 'var(--ink-muted)' }}>
-          You typed:{' '}
+          You wrote:{' '}
           <span className="rounded-md bg-red-100 px-1.5 py-0.5 font-bold text-red-800">
             {typed || '—'}
           </span>
@@ -435,7 +730,7 @@ export function SpellingDetectivePopover({
 
       {isSolved && (
         <div className="mt-3 rounded-xl border border-emerald-300 bg-emerald-100 px-3 py-2 text-center text-sm font-bold text-emerald-900">
-          🎉 Awesome! You spelled it right!
+          🎉 You got it! Updating your story...
         </div>
       )}
 
@@ -465,11 +760,9 @@ export function SpellingDetectivePopover({
                 <button
                   type="button"
                   onClick={() => {
-                    setLockedTarget(cand);
                     setAudioCandidates([]);
                     setShowNotRightMenu(false);
-                    setStep2Unlocked(false);
-                    setPeekSecondsLeft(null);
+                    initializeWorkbench(typed, cand);
                   }}
                   className="h-8 cursor-pointer rounded-lg bg-blue-600 px-3 text-xs font-bold text-white transition hover:bg-blue-700"
                 >
@@ -480,29 +773,85 @@ export function SpellingDetectivePopover({
           </div>
         </div>
       ) : target ? (
-        /* Normal 3-Step Progressive Hint Card */
+        /* Interactive Letter-Box Workbench */
         <div className="mt-3">
-          <p className="mb-1 text-[11px] font-bold" style={{ color: 'var(--ink-muted)' }}>
-            Word clue ({target.length} letters):
-          </p>
-          <div className="flex flex-wrap items-center gap-1.5" aria-label="Word clue">
-            {tiles.map((tile, idx) => (
-              <span
-                key={idx}
-                className={`inline-flex h-9 min-w-[2rem] items-center justify-center rounded-lg border-2 px-1.5 text-base font-bold transition ${
-                  tile.isMatched
-                    ? 'border-emerald-600 bg-emerald-500 text-white'
-                    : tile.isRevealed
-                      ? 'border-blue-400/60 bg-blue-500/10'
-                      : 'border-current/25 bg-transparent'
-                }`}
-              >
-                {tile.isRevealed ? tile.char : '_'}
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="text-xs font-bold">
+              Fix it here ({target.length} letters):
+            </span>
+            {yellowClueLetters.length > 0 && !isSolved && (
+              <span className="rounded-md border border-dashed border-amber-400 bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-950">
+                🟨 Use: {yellowClueLetters.join(', ')}
               </span>
-            ))}
+            )}
           </div>
-          <p className="mt-1.5 text-[11px] font-medium" style={{ color: 'var(--ink-muted)' }}>
-            🟩 Right spot • 🟨 Right letter, wrong spot!
+
+          <div
+            className={`flex flex-wrap items-center gap-1.5 ${
+              isShaking ? 'animate-gentle-shake' : ''
+            }`}
+            role="group"
+            aria-label="Spell the word in the boxes"
+          >
+            {slots.map((slot, idx) => {
+              if (slot.locked) {
+                return (
+                  <span
+                    key={idx}
+                    aria-label={`Letter ${idx + 1}: ${slot.value} (locked)`}
+                    className="inline-flex h-10 w-9 items-center justify-center rounded-xl border-2 border-emerald-600 bg-emerald-500 text-lg font-bold text-white shadow-xs select-none"
+                  >
+                    {slot.value}
+                  </span>
+                );
+              }
+
+              const flashClasses =
+                slot.flash === 'present'
+                  ? 'border-dashed border-amber-500 bg-amber-200 text-amber-950'
+                  : slot.flash === 'wrong'
+                    ? 'border-rose-400 bg-rose-100 text-rose-900'
+                    : 'border-blue-400 bg-white text-slate-900 focus:border-blue-600 focus:ring-2 focus:ring-blue-500/30';
+
+              return (
+                <div key={idx} className="relative">
+                  <input
+                    ref={(el) => {
+                      slotRefs.current[idx] = el;
+                    }}
+                    type="text"
+                    inputMode="text"
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    disabled={isSolved || isEvaluating || isPeeking}
+                    value={isPeeking ? '' : slot.value}
+                    aria-label={`Letter ${idx + 1} of ${slots.length}`}
+                    onKeyDown={(e) => handleSlotKeyDown(idx, e)}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const lastChar = raw.slice(-1);
+                      if (lastChar) {
+                        handleCharacterEntry(idx, lastChar);
+                      }
+                    }}
+                    className={`h-10 w-9 rounded-xl border-2 text-center text-lg font-bold shadow-xs transition focus:outline-none ${flashClasses}`}
+                  />
+                  {isPeeking && (
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 flex items-center justify-center text-lg font-bold text-purple-600/75"
+                    >
+                      {slot.targetChar}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <p className="mt-1.5 text-[11px] font-semibold" style={{ color: 'var(--ink-muted)' }}>
+            {feedbackMsg || 'Type the missing letters — checks automatically when full!'}
           </p>
         </div>
       ) : (
@@ -514,98 +863,103 @@ export function SpellingDetectivePopover({
       )}
 
       {/* Action Buttons */}
-      <div className="mt-3.5 flex flex-col gap-2">
-        {target && (
-          <>
-            <button
-              type="button"
-              onClick={() => speakWord(target)}
-              style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
-              className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-black/10 px-3 text-sm font-bold transition hover:opacity-85"
-            >
-              <Volume2 className="h-4 w-4 text-blue-600" aria-hidden="true" />
-              <span>Hear the word</span>
-            </button>
-
-            {!step2Unlocked && !isPeeking && (
+      {!isSolved && (
+        <div className="mt-3.5 flex flex-col gap-2">
+          {target && (
+            <>
               <button
                 type="button"
-                onClick={() => setStep2Unlocked(true)}
-                className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-100 px-3 text-sm font-bold text-amber-950 transition hover:bg-amber-200"
+                onClick={() => speakWord(target, true)}
+                style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
+                className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-black/10 px-3 text-sm font-bold transition hover:opacity-85"
               >
-                <Lightbulb className="h-4 w-4" aria-hidden="true" />
-                <span>Give me another hint</span>
+                <Volume2 className="h-4 w-4 text-blue-600" aria-hidden="true" />
+                <span>Hear the word</span>
               </button>
-            )}
 
-            {allowPeek && (
+              {unlockedCount >= 2 && !isPeeking && (
+                <button
+                  type="button"
+                  onClick={handleRevealOneHint}
+                  className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-100 px-3 text-sm font-bold text-amber-950 transition hover:bg-amber-200"
+                >
+                  <Lightbulb className="h-4 w-4" aria-hidden="true" />
+                  <span>Give me a hint (1 letter)</span>
+                </button>
+              )}
+
+              {allowPeek && unlockedCount >= 1 && (
+                <button
+                  type="button"
+                  disabled={isPeeking}
+                  onClick={() => setPeekSecondsLeft(3)}
+                  className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-purple-300 bg-purple-100 px-3 text-sm font-bold text-purple-950 transition hover:bg-purple-200 disabled:cursor-default"
+                >
+                  {isPeeking ? (
+                    <>
+                      <Sparkles className="h-4 w-4" aria-hidden="true" />
+                      <span>Peeking... ({peekSecondsLeft}s)</span>
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="h-4 w-4" aria-hidden="true" />
+                      <span>3-Second Peek</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              {!showNotRightMenu && (
+                <button
+                  type="button"
+                  onClick={() => void handleNotRightWord()}
+                  style={{ color: 'var(--ink-muted)' }}
+                  className="flex cursor-pointer items-center justify-center gap-1 py-1 text-xs font-semibold underline decoration-dotted hover:opacity-80"
+                >
+                  <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Not the right word?</span>
+                </button>
+              )}
+            </>
+          )}
+
+          {/* Voice fallback when no match is found OR under "Not the right word?" */}
+          {canUseVoice && (!target || showNotRightMenu) && (
+            <div>
               <button
                 type="button"
-                disabled={isPeeking}
-                onClick={() => setPeekSecondsLeft(3)}
-                className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-purple-300 bg-purple-100 px-3 text-sm font-bold text-purple-950 transition hover:bg-purple-200 disabled:cursor-default"
+                onClick={handleVoiceSayWord}
+                disabled={isListening}
+                className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-sky-300 bg-sky-100 px-3 text-sm font-bold text-sky-950 transition hover:bg-sky-200 disabled:opacity-75"
               >
-                {isPeeking ? (
-                  <>
-                    <Sparkles className="h-4 w-4" aria-hidden="true" />
-                    <span>Peeking... ({peekSecondsLeft}s)</span>
-                  </>
-                ) : (
-                  <>
-                    <Eye className="h-4 w-4" aria-hidden="true" />
-                    <span>3-Second Peek</span>
-                  </>
-                )}
+                <Mic
+                  className={`h-4 w-4 ${isListening ? 'animate-pulse text-red-500' : ''}`}
+                  aria-hidden="true"
+                />
+                <span>{isListening ? 'Listening...' : 'Say the word'}</span>
               </button>
-            )}
+              {voiceError && (
+                <p className="mt-1 text-center text-[11px] font-semibold text-red-700">
+                  {voiceError}
+                </p>
+              )}
+            </div>
+          )}
 
-            {!showNotRightMenu && (
-              <button
-                type="button"
-                onClick={() => void handleNotRightWord()}
-                style={{ color: 'var(--ink-muted)' }}
-                className="flex cursor-pointer items-center justify-center gap-1 py-1 text-xs font-semibold underline decoration-dotted hover:opacity-80"
-              >
-                <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Not the right word?</span>
-              </button>
-            )}
-          </>
-        )}
-
-        {/* Voice fallback when no match is found OR under "Not the right word?" */}
-        {canUseVoice && (!target || showNotRightMenu) && (
-          <div>
-            <button
-              type="button"
-              onClick={handleVoiceSayWord}
-              disabled={isListening}
-              className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-sky-300 bg-sky-100 px-3 text-sm font-bold text-sky-950 transition hover:bg-sky-200 disabled:opacity-75"
-            >
-              <Mic className={`h-4 w-4 ${isListening ? 'animate-pulse text-red-500' : ''}`} aria-hidden="true" />
-              <span>{isListening ? 'Listening...' : 'Say the word'}</span>
-            </button>
-            {voiceError && (
-              <p className="mt-1 text-center text-[11px] font-semibold text-red-700">
-                {voiceError}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* It's a real word! */}
-        <button
-          type="button"
-          onClick={() => {
-            onAddPersonalWord(typed);
-            onClose();
-          }}
-          className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-100 px-3 text-sm font-bold text-emerald-950 transition hover:bg-emerald-200"
-        >
-          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-          <span>It&apos;s a real word!</span>
-        </button>
-      </div>
+          {/* It's a real word! */}
+          <button
+            type="button"
+            onClick={() => {
+              onAddPersonalWord(typed);
+              onClose();
+            }}
+            className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-100 px-3 text-sm font-bold text-emerald-950 transition hover:bg-emerald-200"
+          >
+            <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+            <span>It&apos;s a real word!</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
-import type { Transaction } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -55,8 +54,6 @@ import type {
 } from './workers/spellcheck.worker';
 
 type SaveStatus = 'idle' | 'saving' | 'saved';
-
-const WORD_CHAR_REGEX = /[A-Za-zÀ-ÖØ-öø-ÿ'’]/;
 
 function countWords(text: string): number {
   const trimmed = text.trim();
@@ -170,87 +167,6 @@ export function App() {
   const scheduleSaveRef = useRef<() => void>(() => {});
   const scheduleSpellCheckRef = useRef<() => void>(() => {});
 
-  const handleSurfaceSelectionUpdate = useCallback(
-    (surface: SpellTargetSurface, currentEditor: Editor) => {
-      const activeErr = clickedSpellErrorRef.current;
-      if (!activeErr) return;
-
-      if (activeErr.surface !== surface) {
-        if (currentEditor.isFocused) {
-          setClickedSpellError(null);
-        }
-        return;
-      }
-
-      const { from: selFrom, to: selTo } = currentEditor.state.selection;
-      if (selFrom !== selTo || selFrom < activeErr.from || selFrom > activeErr.to) {
-        setClickedSpellError(null);
-      }
-    },
-    []
-  );
-
-  const handleSurfaceTransaction = useCallback(
-    (surface: SpellTargetSurface, currentEditor: Editor, transaction: Transaction) => {
-      const prev = clickedSpellErrorRef.current;
-      if (!transaction.docChanged || !prev || prev.surface !== surface) return;
-
-      const maxPos = transaction.doc.content.size;
-      const mappedFrom = Math.max(0, Math.min(transaction.mapping.map(prev.from, -1), maxPos));
-
-      const $pos = transaction.doc.resolve(mappedFrom);
-      if (!$pos.parent.isTextblock) {
-        setClickedSpellError(null);
-        return;
-      }
-
-      const blockStart = $pos.start();
-      const blockText = $pos.parent.textBetween(0, $pos.parent.content.size, '\n', '\n');
-      let relStart = Math.max(0, Math.min(mappedFrom - blockStart, blockText.length));
-
-      // Expand left in case characters were inserted/replaced before prev.from
-      while (relStart > 0 && WORD_CHAR_REGEX.test(blockText[relStart - 1])) {
-        relStart -= 1;
-      }
-
-      let relEnd = relStart;
-      while (relEnd < blockText.length && WORD_CHAR_REGEX.test(blockText[relEnd])) {
-        relEnd += 1;
-      }
-
-      const nextWord = blockText.slice(relStart, relEnd);
-      const wordFrom = blockStart + relStart;
-      const wordTo = blockStart + relEnd;
-
-      const caret = transaction.selection.from;
-      if (!transaction.selection.empty || caret < wordFrom || caret > wordTo) {
-        setClickedSpellError(null);
-        return;
-      }
-
-      setClickedSpellError((curr) => {
-        if (!curr || curr.id !== prev.id) return curr;
-        return {
-          ...curr,
-          from: wordFrom,
-          to: wordTo,
-          word: nextWord,
-        };
-      });
-
-      requestAnimationFrame(() => {
-        if (currentEditor.isDestroyed) return;
-        const nextRect = computeWordDomRect(currentEditor.view, wordFrom, wordTo);
-        if (!nextRect) return;
-        setClickedSpellError((curr) => {
-          if (!curr || curr.id !== prev.id) return curr;
-          return { ...curr, rect: nextRect };
-        });
-      });
-    },
-    []
-  );
-
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -283,15 +199,11 @@ export function App() {
       scheduleSaveRef.current();
       scheduleSpellCheckRef.current();
     },
-    onSelectionUpdate: ({ editor: currentEditor }) => {
+    onSelectionUpdate: () => {
       scheduleSpellCheckRef.current();
-      handleSurfaceSelectionUpdate('body', currentEditor);
     },
     onBlur: () => {
       scheduleSpellCheckRef.current();
-    },
-    onTransaction: ({ editor: currentEditor, transaction }) => {
-      handleSurfaceTransaction('body', currentEditor, transaction);
     },
   });
 
@@ -775,6 +687,34 @@ export function App() {
     [runSpellCheckNow]
   );
 
+  const handleReplaceSpellWord = useCallback(
+    (err: ClickedSpellError, replacement: string) => {
+      const targetEd = err.surface === 'title' ? titleEditorRef.current : editor;
+      if (!targetEd || targetEd.isDestroyed) {
+        setClickedSpellError(null);
+        return;
+      }
+
+      const { state, view } = targetEd;
+      const docSize = state.doc.content.size;
+      const safeFrom = Math.max(0, Math.min(err.from, docSize));
+      const safeTo = Math.max(safeFrom, Math.min(err.to, docSize));
+      const marks =
+        safeFrom < safeTo
+          ? state.doc.resolve(Math.min(safeFrom + 1, safeTo)).marks()
+          : state.doc.resolve(safeFrom).marks();
+
+      const textNode = state.schema.text(replacement, marks);
+      const tr = state.tr.replaceWith(safeFrom, safeTo, textNode);
+      view.dispatch(tr);
+
+      setClickedSpellError(null);
+      targetEd.commands.focus(safeFrom + replacement.length);
+      runSpellCheckNow();
+    },
+    [editor, runSpellCheckNow]
+  );
+
   const handleRequestPhoneticLookup = useCallback(
     (word: string, exclude?: string): Promise<string[]> => {
       const worker = spellWorkerRef.current;
@@ -1048,8 +988,6 @@ export function App() {
               onFocusBody={() => editor?.commands.focus('start')}
               onWordClick={setClickedSpellError}
               onScheduleSpellCheck={scheduleSpellCheck}
-              onTitleSelectionUpdate={(ed) => handleSurfaceSelectionUpdate('title', ed)}
-              onTitleTransaction={(ed, tr) => handleSurfaceTransaction('title', ed, tr)}
               onEditorReady={handleTitleEditorReady}
             />
           </div>
@@ -1130,11 +1068,12 @@ export function App() {
         contacts={contacts}
       />
 
-      {/* 3-Step Spelling Detective Hint Popover */}
+      {/* Spelling Detective Word Workbench Popover */}
       <SpellingDetectivePopover
         error={clickedSpellError}
         allowPeek={allowPeek}
         onClose={() => setClickedSpellError(null)}
+        onReplaceWord={handleReplaceSpellWord}
         onAddPersonalWord={handleAddPersonalWord}
         onRequestPhoneticLookup={handleRequestPhoneticLookup}
       />
