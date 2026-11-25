@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/react';
 import {
   Bold,
@@ -19,6 +20,7 @@ import {
 } from 'lucide-react';
 import {
   COLOR_SWATCHES,
+  EXTENDED_COLOR_GRID,
   FONTS,
   TEXT_SIZES,
 } from '../constants/editorConfig';
@@ -92,6 +94,32 @@ export function Toolbar({
   isFullscreen,
   onToggleFullscreen,
 }: ToolbarProps) {
+  const [isColorGridOpen, setIsColorGridOpen] = useState(false);
+  const [hoveredColorName, setHoveredColorName] = useState<string | null>(null);
+  const colorGridRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isColorGridOpen) return;
+    const handlePointerDown = (e: PointerEvent) => {
+      if (colorGridRef.current && !colorGridRef.current.contains(e.target as Node)) {
+        setIsColorGridOpen(false);
+        setHoveredColorName(null);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsColorGridOpen(false);
+        setHoveredColorName(null);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isColorGridOpen]);
+
   if (!editor) {
     return null;
   }
@@ -104,7 +132,12 @@ export function Toolbar({
   const isCustomColorActive =
     activeColor !== '' &&
     !COLOR_SWATCHES.some((s) => s.value !== '' && s.value.toLowerCase() === activeColor.toLowerCase());
-  const customPickerHex = /^#[0-9a-f]{6}$/i.test(activeColor) ? activeColor : '#ec4899';
+  const activeSwatchLabel =
+    EXTENDED_COLOR_GRID.find((s) =>
+      s.value === ''
+        ? activeColor === ''
+        : s.value.toLowerCase() === activeColor.toLowerCase()
+    )?.name ?? 'Pick a colour';
 
   const handleFontChange = (fontValue: string) => {
     const { empty } = editor.state.selection;
@@ -309,43 +342,110 @@ export function Toolbar({
               );
             })}
 
-            {/* Custom Color Wheel Picker */}
-            <label
-              title="Pick any custom colour"
-              style={
-                isCustomColorActive
-                  ? { backgroundColor: customPickerHex }
-                  : { backgroundImage: RAINBOW_WHEEL_BG }
-              }
-              className={`color-swatch relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-2 transition-transform hover:scale-110 focus-within:outline-3 focus-within:outline-offset-2 focus-within:outline-blue-600 ${
-                isCustomColorActive
-                  ? 'scale-110 border-white ring-2 ring-blue-500'
-                  : 'border-black/20'
-              }`}
-            >
-              <input
-                type="color"
-                value={customPickerHex}
-                aria-label="Pick any custom text colour"
-                onChange={(e) => {
-                  editor.commands.setColor(e.target.value);
+            {/* More Colours Crayon Grid Popover */}
+            <div ref={colorGridRef} className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsColorGridOpen((prev) => !prev);
+                  setHoveredColorName(null);
                 }}
-                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-              />
-              {isCustomColorActive ? (
-                <Check
-                  className={`pointer-events-none h-3.5 w-3.5 stroke-[3] ${
-                    isLightHex(customPickerHex) ? 'text-slate-900' : 'text-white'
-                  }`}
-                  aria-hidden="true"
-                />
-              ) : (
-                <span
-                  className="pointer-events-none h-2.5 w-2.5 rounded-full bg-white/90 shadow-xs"
-                  aria-hidden="true"
-                />
+                aria-label="More colours"
+                aria-expanded={isColorGridOpen}
+                title="More colours"
+                style={
+                  isCustomColorActive
+                    ? { backgroundColor: activeColor }
+                    : { backgroundImage: RAINBOW_WHEEL_BG }
+                }
+                className={`color-swatch relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-2 transition-transform hover:scale-110 ${
+                  isCustomColorActive || isColorGridOpen
+                    ? 'scale-110 border-white ring-2 ring-blue-500'
+                    : 'border-black/20'
+                }`}
+              >
+                {isCustomColorActive ? (
+                  <Check
+                    className={`pointer-events-none h-3.5 w-3.5 stroke-[3] ${
+                      isLightHex(activeColor) ? 'text-slate-900' : 'text-white'
+                    }`}
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <span
+                    className="pointer-events-none h-2.5 w-2.5 rounded-full bg-white/90 shadow-xs"
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
+
+              {isColorGridOpen && (
+                <div
+                  role="dialog"
+                  aria-label="Choose a text colour"
+                  style={{
+                    backgroundColor: 'var(--page-bg)',
+                    borderColor: 'var(--toolbar-border)',
+                    color: 'var(--ink)',
+                  }}
+                  className="absolute top-10 left-1/2 z-50 w-76 -translate-x-1/2 rounded-2xl border-2 p-3.5 shadow-2xl sm:left-auto sm:right-0 sm:translate-x-0"
+                >
+                  <div className="mb-2.5 flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold">
+                      🎨 {hoveredColorName || activeSwatchLabel}
+                    </span>
+                    <span
+                      className="text-[11px] font-semibold"
+                      style={{ color: 'var(--ink-muted)' }}
+                    >
+                      32 colours
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-8 gap-2">
+                    {EXTENDED_COLOR_GRID.map((swatch) => {
+                      const isActive =
+                        swatch.value === ''
+                          ? activeColor === ''
+                          : activeColor.toLowerCase() === swatch.value.toLowerCase();
+
+                      return (
+                        <button
+                          key={swatch.name}
+                          type="button"
+                          onClick={() => {
+                            handleColorChange(swatch.value);
+                            setIsColorGridOpen(false);
+                            setHoveredColorName(null);
+                          }}
+                          onMouseEnter={() => setHoveredColorName(swatch.name)}
+                          onMouseLeave={() => setHoveredColorName(null)}
+                          onFocus={() => setHoveredColorName(swatch.name)}
+                          aria-label={swatch.name}
+                          aria-pressed={isActive}
+                          title={swatch.name}
+                          style={{ backgroundColor: swatch.preview }}
+                          className={`color-swatch flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-2 transition-transform hover:scale-115 ${
+                            isActive
+                              ? 'scale-110 border-white ring-2 ring-blue-500'
+                              : 'border-black/15'
+                          }`}
+                        >
+                          {isActive && (
+                            <Check
+                              className={`h-3.5 w-3.5 stroke-[3] ${
+                                isLightHex(swatch.preview) ? 'text-slate-900' : 'text-white'
+                              }`}
+                              aria-hidden="true"
+                            />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
-            </label>
+            </div>
           </div>
         </div>
 
