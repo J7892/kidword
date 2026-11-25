@@ -667,9 +667,7 @@ export function App() {
             }
           }}
           style={{ fontFamily: defaultFont }}
-          className={`paper-surface mx-auto min-h-[78vh] w-full max-w-[780px] cursor-text rounded-2xl px-6 py-8 sm:px-14 sm:py-12 ${
-            isLined ? 'paper-lined sm:pl-20' : ''
-          }`}
+          className="paper-surface mx-auto min-h-[78vh] w-full max-w-[780px] cursor-text rounded-2xl px-6 py-8 sm:px-14 sm:py-12"
         >
           {/* Editable Story Title */}
           <input
@@ -680,11 +678,13 @@ export function App() {
             spellCheck={false}
             aria-label="Story Title"
             style={{ color: 'var(--ink)' }}
-            className="mb-6 w-full border-b border-transparent bg-transparent pb-2 text-2xl font-bold tracking-tight placeholder:opacity-45 focus:border-current/15 focus:outline-none sm:text-3xl"
+            className={`mb-6 w-full border-b border-transparent bg-transparent pb-2 text-2xl font-bold tracking-tight placeholder:opacity-45 focus:border-current/15 focus:outline-none sm:text-3xl ${
+              isLined ? 'sm:pl-16' : ''
+            }`}
           />
 
           {/* Tiptap Writing Surface */}
-          <div className="kidword-editor">
+          <div className={`kidword-editor ${isLined ? 'paper-lined rounded-lg sm:pl-16' : ''}`}>
             <EditorContent editor={editor} />
           </div>
         </div>
