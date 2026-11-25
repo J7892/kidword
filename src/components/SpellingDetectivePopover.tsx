@@ -297,7 +297,7 @@ export function SpellingDetectivePopover({
       {/* Typed word badge */}
       <p className="mt-2 text-xs font-semibold" style={{ color: 'var(--ink-muted)' }}>
         You typed:{' '}
-        <span className="rounded-md bg-red-500/15 px-1.5 py-0.5 font-bold text-red-600 dark:text-red-400">
+        <span className="rounded-md bg-red-100 px-1.5 py-0.5 font-bold text-red-800 dark:bg-red-950/60 dark:text-red-200">
           {typed}
         </span>
       </p>
@@ -381,17 +381,17 @@ export function SpellingDetectivePopover({
               type="button"
               onClick={() => speakWord(target)}
               style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
-              className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold transition hover:opacity-85"
+              className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-black/10 px-3 text-sm font-bold transition hover:opacity-85 dark:border-white/10"
             >
-              <Volume2 className="h-4 w-4 text-blue-500" aria-hidden="true" />
-              <span>🔊 Hear the word</span>
+              <Volume2 className="h-4 w-4 text-blue-600 dark:text-blue-400" aria-hidden="true" />
+              <span>Hear the word</span>
             </button>
 
             {!step2Unlocked && !isPeeking && (
               <button
                 type="button"
                 onClick={() => setStep2Unlocked(true)}
-                className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-amber-500/15 px-3 text-sm font-bold text-amber-700 transition hover:bg-amber-500/25 dark:text-amber-300"
+                className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-100 px-3 text-sm font-bold text-amber-950 transition hover:bg-amber-200 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-100 dark:hover:bg-amber-900/60"
               >
                 <Lightbulb className="h-4 w-4" aria-hidden="true" />
                 <span>Give me another hint</span>
@@ -403,7 +403,7 @@ export function SpellingDetectivePopover({
                 type="button"
                 disabled={isPeeking}
                 onClick={() => setPeekSecondsLeft(3)}
-                className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-purple-500/15 px-3 text-sm font-bold text-purple-700 transition hover:bg-purple-500/25 disabled:cursor-default dark:text-purple-300"
+                className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-purple-300 bg-purple-100 px-3 text-sm font-bold text-purple-950 transition hover:bg-purple-200 disabled:cursor-default dark:border-purple-700 dark:bg-purple-900/40 dark:text-purple-100 dark:hover:bg-purple-900/60"
               >
                 {isPeeking ? (
                   <>
@@ -440,13 +440,13 @@ export function SpellingDetectivePopover({
               type="button"
               onClick={handleVoiceSayWord}
               disabled={isListening}
-              className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-sky-500/15 px-3 text-sm font-bold text-sky-700 transition hover:bg-sky-500/25 disabled:opacity-75 dark:text-sky-300"
+              className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-sky-300 bg-sky-100 px-3 text-sm font-bold text-sky-950 transition hover:bg-sky-200 disabled:opacity-75 dark:border-sky-700 dark:bg-sky-900/40 dark:text-sky-100 dark:hover:bg-sky-900/60"
             >
               <Mic className={`h-4 w-4 ${isListening ? 'animate-pulse text-red-500' : ''}`} aria-hidden="true" />
-              <span>{isListening ? 'Listening...' : '🎤 Say the word'}</span>
+              <span>{isListening ? 'Listening...' : 'Say the word'}</span>
             </button>
             {voiceError && (
-              <p className="mt-1 text-center text-[11px] font-semibold text-red-600">
+              <p className="mt-1 text-center text-[11px] font-semibold text-red-700 dark:text-red-300">
                 {voiceError}
               </p>
             )}
@@ -460,7 +460,7 @@ export function SpellingDetectivePopover({
             onAddPersonalWord(typed);
             onClose();
           }}
-          className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-emerald-600/15 px-3 text-sm font-bold text-emerald-700 transition hover:bg-emerald-600/25 dark:text-emerald-300"
+          className="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-100 px-3 text-sm font-bold text-emerald-950 transition hover:bg-emerald-200 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-100 dark:hover:bg-emerald-900/60"
         >
           <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
           <span>It&apos;s a real word!</span>
