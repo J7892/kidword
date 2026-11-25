@@ -10,9 +10,11 @@ import {
   Pause,
   Play,
   Plus,
+  Redo2,
   Share2,
   Square,
   Underline as UnderlineIcon,
+  Undo2,
   Volume2,
 } from 'lucide-react';
 import {
@@ -132,6 +134,34 @@ export function Toolbar({
             >
               <Plus className="h-4 w-4 stroke-[2.75]" aria-hidden="true" />
               <span className="hidden sm:inline">New Story</span>
+            </button>
+          </div>
+
+          <Divider />
+
+          {/* Undo & Redo */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => editor.chain().focus().undo().run()}
+              disabled={!editor.can().undo()}
+              aria-label="Undo"
+              title="Undo"
+              style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
+              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl transition hover:opacity-90 disabled:cursor-default disabled:opacity-35"
+            >
+              <Undo2 className="h-4 w-4 stroke-[2.5]" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() => editor.chain().focus().redo().run()}
+              disabled={!editor.can().redo()}
+              aria-label="Redo"
+              title="Redo"
+              style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
+              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl transition hover:opacity-90 disabled:cursor-default disabled:opacity-35"
+            >
+              <Redo2 className="h-4 w-4 stroke-[2.5]" aria-hidden="true" />
             </button>
           </div>
 

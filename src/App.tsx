@@ -13,7 +13,7 @@ import { StoriesDrawer } from './components/StoriesDrawer';
 import { StorySparkModal } from './components/StorySparkModal';
 import { Toolbar, type ReadAloudSpeed, type ReadAloudStatus } from './components/Toolbar';
 import { WhatsAppShareModal } from './components/WhatsAppShareModal';
-import { FONTS, type PageTheme } from './constants/editorConfig';
+import { FONTS, STORY_EMOJIS, type PageTheme } from './constants/editorConfig';
 import {
   clearAllStories,
   createBlankStory,
@@ -52,6 +52,12 @@ type SaveStatus = 'idle' | 'saving' | 'saved';
 
 const WORD_CHAR_REGEX = /[A-Za-zÀ-ÖØ-öø-ÿ'’]/;
 
+function countWords(text: string): number {
+  const trimmed = text.trim();
+  if (!trimmed) return 0;
+  return trimmed.split(/\s+/).length;
+}
+
 function computeWordDomRect(view: EditorView, from: number, to: number): DOMRect | null {
   try {
     const docSize = view.state.doc.content.size;
@@ -89,6 +95,11 @@ export function App() {
   const [isSparkOpen, setIsSparkOpen] = useState(false);
   const [pinnedIdea, setPinnedIdea] = useState<string | null>(null);
   const [ideaCollapsed, setIdeaCollapsed] = useState(false);
+  const [wordCount, setWordCount] = useState(0);
+  const [isPageEmojiOpen, setIsPageEmojiOpen] = useState(false);
+
+  const titleTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const pageEmojiRef = useRef<HTMLDivElement | null>(null);
 
   const saveTimerRef = useRef<number | null>(null);
   const spellTimerRef = useRef<number | null>(null);
@@ -154,7 +165,11 @@ export function App() {
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        codeBlock: false,
+        code: false,
+        horizontalRule: false,
+      }),
       Underline,
       TextStyle,
       Color,
@@ -174,7 +189,8 @@ export function App() {
         'aria-label': 'Story writing area',
       },
     },
-    onUpdate: () => {
+    onUpdate: ({ editor: currentEditor }) => {
+      setWordCount(countWords(currentEditor.getText()));
       scheduleSaveRef.current();
       scheduleSpellCheckRef.current();
     },
@@ -410,6 +426,7 @@ export function App() {
       setTheme('warm-paper');
       setDefaultFont(active.fontFamily || FONTS[0].value);
       editor.commands.setContent(active.htmlContent || '<p></p>', false);
+      setWordCount(countWords(editor.getText()));
       setSaveStatus('saved');
       requestAnimationFrame(() => {
         skipNextSaveRef.current = false;
@@ -460,6 +477,40 @@ export function App() {
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
+
+  // Auto-resize Story Title textarea to wrap multi-line titles cleanly
+  useEffect(() => {
+    const el = titleTextareaRef.current;
+    if (!el) return;
+    const resize = () => {
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, [title, defaultFont, isFocusMode]);
+
+  // Close inline title emoji picker on outside click or Escape
+  useEffect(() => {
+    if (!isPageEmojiOpen) return;
+    const handlePointerDown = (e: PointerEvent) => {
+      if (pageEmojiRef.current && !pageEmojiRef.current.contains(e.target as Node)) {
+        setIsPageEmojiOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsPageEmojiOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isPageEmojiOpen]);
 
   const stopReadAloud = useCallback(() => {
     readActiveSessionRef.current += 1;
@@ -620,8 +671,10 @@ export function App() {
       setTheme('warm-paper');
       setDefaultFont(story.fontFamily || FONTS[0].value);
       editor.commands.setContent(story.htmlContent || '<p></p>', false);
+      setWordCount(countWords(editor.getText()));
       setSaveStatus('saved');
       setClickedSpellError(null);
+      setIsPageEmojiOpen(false);
       requestAnimationFrame(() => {
         skipNextSaveRef.current = false;
         runSpellCheckNow();
@@ -873,17 +926,69 @@ export function App() {
           style={{ fontFamily: defaultFont }}
           className="paper-surface mx-auto min-h-[78vh] w-full max-w-[780px] cursor-text rounded-2xl px-6 py-8 sm:px-14 sm:py-12"
         >
-          {/* Editable Story Title (screen) */}
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="My Story Title..."
-            spellCheck={false}
-            aria-label="Story Title"
-            style={{ color: 'var(--ink)' }}
-            className="no-print mb-6 w-full border-b border-transparent bg-transparent pb-2 text-2xl font-bold tracking-tight placeholder:opacity-45 focus:border-current/15 focus:outline-none sm:text-3xl"
-          />
+          {/* Editable Story Icon + Wrapping Title (screen) */}
+          <div className="no-print mb-6 flex items-start gap-3">
+            <div ref={pageEmojiRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsPageEmojiOpen((prev) => !prev)}
+                aria-label="Choose story icon"
+                aria-expanded={isPageEmojiOpen}
+                title="Pick a fun icon for your story"
+                style={{ backgroundColor: 'var(--control-bg)' }}
+                className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-2xl text-2xl shadow-xs transition hover:scale-105"
+              >
+                {activeStory?.icon || '📝'}
+              </button>
+
+              {isPageEmojiOpen && activeStory && (
+                <div
+                  role="group"
+                  aria-label="Choose a story icon"
+                  style={{
+                    backgroundColor: 'var(--page-bg)',
+                    borderColor: 'var(--toolbar-border)',
+                  }}
+                  className="absolute top-13 left-0 z-30 grid w-64 grid-cols-6 gap-1.5 rounded-2xl border-2 p-2.5 shadow-xl"
+                >
+                  {STORY_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => {
+                        void handleUpdateStoryIcon(activeStory.id, emoji);
+                        setIsPageEmojiOpen(false);
+                      }}
+                      aria-label={`Use ${emoji} icon`}
+                      className={`flex h-9 cursor-pointer items-center justify-center rounded-xl text-xl transition hover:scale-110 ${
+                        activeStory.icon === emoji ? 'bg-blue-500/20 ring-2 ring-blue-500' : ''
+                      }`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <textarea
+              ref={titleTextareaRef}
+              rows={1}
+              value={title}
+              onChange={(e) => setTitle(e.target.value.replace(/[\r\n]+/g, ' '))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  editor?.commands.focus('start');
+                }
+              }}
+              placeholder="My Story Title..."
+              spellCheck={false}
+              aria-label="Story Title"
+              style={{ color: 'var(--ink)' }}
+              className="w-full resize-none overflow-hidden border-b border-transparent bg-transparent pb-2 text-2xl leading-tight font-bold tracking-tight placeholder:opacity-45 focus:border-current/15 focus:outline-none sm:text-3xl"
+            />
+          </div>
 
           {/* Multi-line wrapping Story Title when printing (Ctrl+P) */}
           {title.trim() && (
@@ -899,23 +1004,32 @@ export function App() {
         </div>
       </main>
 
-      {/* Subtle Auto-Save Status Indicator */}
-      {saveStatus !== 'idle' && (
-        <div
-          aria-live="polite"
-          style={{
-            backgroundColor: 'var(--toolbar-bg)',
-            borderColor: 'var(--toolbar-border)',
-            color: 'var(--ink-muted)',
-          }}
-          className="no-print pointer-events-none fixed right-4 bottom-4 z-20 flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-sm backdrop-blur-sm"
-        >
-          {saveStatus === 'saved' && (
-            <Check className="h-3.5 w-3.5 text-emerald-500 stroke-[2.5]" aria-hidden="true" />
-          )}
-          <span>{saveStatus === 'saving' ? 'Saving...' : 'Saved'}</span>
-        </div>
-      )}
+      {/* Subtle Word Count & Auto-Save Status Indicator */}
+      <div
+        aria-live="polite"
+        style={{
+          backgroundColor: 'var(--toolbar-bg)',
+          borderColor: 'var(--toolbar-border)',
+          color: 'var(--ink-muted)',
+        }}
+        className="no-print pointer-events-none fixed right-4 bottom-4 z-20 flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold shadow-sm backdrop-blur-sm"
+      >
+        <span>
+          {wordCount >= 100 ? '🏆 ' : wordCount >= 50 ? '✨ ' : ''}
+          {wordCount} {wordCount === 1 ? 'word' : 'words'}
+        </span>
+        {saveStatus !== 'idle' && (
+          <>
+            <span aria-hidden="true">•</span>
+            <span className="inline-flex items-center gap-1">
+              {saveStatus === 'saved' && (
+                <Check className="h-3.5 w-3.5 text-emerald-500 stroke-[2.5]" aria-hidden="true" />
+              )}
+              <span>{saveStatus === 'saving' ? 'Saving...' : 'Saved'}</span>
+            </span>
+          </>
+        )}
+      </div>
 
       {/* Slide-over My Stories Drawer */}
       <StoriesDrawer
