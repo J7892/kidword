@@ -1,4 +1,4 @@
-export type PageTheme = 'warm-paper' | 'lined-notebook';
+export type PageTheme = 'warm-paper';
 
 export interface FontOption {
   label: string;
@@ -41,11 +41,6 @@ export const TEXT_SIZES: TextSizeOption[] = [
   { id: 'small', label: 'Small', value: '15px' },
   { id: 'normal', label: 'Normal', value: '' },
   { id: 'big', label: 'Big', value: '24px' },
-];
-
-export const PAGE_THEMES: { id: PageTheme; label: string }[] = [
-  { id: 'warm-paper', label: 'Warm Paper' },
-  { id: 'lined-notebook', label: 'Lined Notebook' },
 ];
 
 export const STORY_EMOJIS = [

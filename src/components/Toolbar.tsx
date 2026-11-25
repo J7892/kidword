@@ -7,22 +7,18 @@ import {
   Italic,
   Maximize2,
   Minimize2,
-  Notebook,
   Pause,
   Play,
   Plus,
   Share2,
   Square,
-  Sun,
   Underline as UnderlineIcon,
   Volume2,
 } from 'lucide-react';
 import {
   COLOR_SWATCHES,
   FONTS,
-  PAGE_THEMES,
   TEXT_SIZES,
-  type PageTheme,
 } from '../constants/editorConfig';
 
 export type ReadAloudStatus = 'idle' | 'playing' | 'paused';
@@ -32,8 +28,6 @@ interface ToolbarProps {
   editor: Editor | null;
   defaultFont: string;
   onDefaultFontChange: (font: string) => void;
-  theme: PageTheme;
-  onThemeChange: (theme: PageTheme) => void;
   onOpenStories: () => void;
   onCreateStory: () => void;
   readAloudStatus: ReadAloudStatus;
@@ -52,8 +46,6 @@ export function Toolbar({
   editor,
   defaultFont,
   onDefaultFontChange,
-  theme,
-  onThemeChange,
   onOpenStories,
   onCreateStory,
   readAloudStatus,
@@ -98,11 +90,6 @@ export function Toolbar({
     } else {
       editor.chain().focus().setColor(colorValue).run();
     }
-  };
-
-  const themeIcon = (id: PageTheme) => {
-    if (id === 'warm-paper') return <Sun className="h-4 w-4" aria-hidden="true" />;
-    return <Notebook className="h-4 w-4" aria-hidden="true" />;
   };
 
   return (
@@ -254,40 +241,8 @@ export function Toolbar({
           </div>
         </div>
 
-        {/* Right Group: Page Themes + Focus & Fullscreen */}
+        {/* Right Group: Read, Spark, Share, Focus & Fullscreen */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* 3 Page Themes */}
-          <div
-            className="flex items-center gap-1 rounded-xl p-1"
-            style={{ backgroundColor: 'var(--control-bg)' }}
-            role="group"
-            aria-label="Page theme"
-          >
-            {PAGE_THEMES.map((item) => {
-              const isActive = theme === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onThemeChange(item.id)}
-                  aria-pressed={isActive}
-                  title={item.label}
-                  style={
-                    isActive
-                      ? { backgroundColor: 'var(--control-active-bg)', color: 'var(--control-active-text)' }
-                      : { color: 'var(--ink)' }
-                  }
-                  className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition hover:opacity-90 sm:text-sm"
-                >
-                  {themeIcon(item.id)}
-                  <span className="hidden md:inline">{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <Divider />
-
           {/* Read My Story & Story Spark Dice */}
           <div className="flex items-center gap-1.5">
             {readAloudStatus === 'idle' ? (

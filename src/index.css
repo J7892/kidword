@@ -24,13 +24,6 @@
   color-scheme: light;
 }
 
-:root[data-theme="lined-notebook"] {
-  color-scheme: light;
-  --desk-bg: #ebe6dc;
-  --page-bg: #fffdf7;
-  --page-border: #dcd5c5;
-}
-
 * {
   box-sizing: border-box;
 }
@@ -56,48 +49,6 @@ body {
   box-shadow: var(--page-shadow);
   color: var(--ink);
   transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
-}
-
-.paper-lined {
-  background-image:
-    linear-gradient(to right, transparent 0, transparent 54px, var(--notebook-margin) 54px, var(--notebook-margin) 55.5px, transparent 55.5px),
-    repeating-linear-gradient(
-      to bottom,
-      transparent 0,
-      transparent 25px,
-      var(--notebook-line) 25px,
-      var(--notebook-line) 26px,
-      transparent 26px,
-      transparent 32px
-    );
-  background-position: 0 0, 0 0;
-  background-attachment: local;
-}
-
-@media (max-width: 640px) {
-  .paper-lined {
-    background-image: repeating-linear-gradient(
-      to bottom,
-      transparent 0,
-      transparent 25px,
-      var(--notebook-line) 25px,
-      var(--notebook-line) 26px,
-      transparent 26px,
-      transparent 32px
-    );
-    background-position: 0 0;
-  }
-}
-
-.paper-lined .ProseMirror {
-  line-height: 32px;
-}
-
-.paper-lined .ProseMirror p,
-.paper-lined .ProseMirror li,
-.paper-lined .ProseMirror blockquote {
-  line-height: 32px;
-  margin: 0 0 32px 0;
 }
 
 /* Tiptap Editor Surface */

@@ -260,12 +260,10 @@ export function App() {
     void initActiveStory().then(({ active, stories: all }) => {
       if (cancelled) return;
       skipNextSaveRef.current = true;
-      const normalizedTheme: PageTheme =
-        active.theme === 'lined-notebook' ? 'lined-notebook' : 'warm-paper';
       setStories(all);
       setActiveStory(active);
       setTitle(active.title);
-      setTheme(normalizedTheme);
+      setTheme('warm-paper');
       setDefaultFont(active.fontFamily || FONTS[0].value);
       editor.commands.setContent(active.htmlContent || '<p></p>', false);
       setSaveStatus('saved');
@@ -306,11 +304,7 @@ export function App() {
     document.documentElement.dataset.theme = theme;
     const themeColorMeta = document.querySelector('meta[name="theme-color"]');
     if (themeColorMeta) {
-      const colors: Record<PageTheme, string> = {
-        'warm-paper': '#FBF7EE',
-        'lined-notebook': '#FFFDF7',
-      };
-      themeColorMeta.setAttribute('content', colors[theme]);
+      themeColorMeta.setAttribute('content', '#FBF7EE');
     }
   }, [theme]);
 
@@ -439,12 +433,10 @@ export function App() {
         window.clearTimeout(saveTimerRef.current);
       }
       skipNextSaveRef.current = true;
-      const normalizedTheme: PageTheme =
-        story.theme === 'lined-notebook' ? 'lined-notebook' : 'warm-paper';
       setActiveStory(story);
       setActiveStoryId(story.id);
       setTitle(story.title);
-      setTheme(normalizedTheme);
+      setTheme('warm-paper');
       setDefaultFont(story.fontFamily || FONTS[0].value);
       editor.commands.setContent(story.htmlContent || '<p></p>', false);
       setSaveStatus('saved');
@@ -571,8 +563,6 @@ export function App() {
     }
   };
 
-  const isLined = theme === 'lined-notebook';
-
   return (
     <div className="min-h-screen flex flex-col">
       {!isFocusMode ? (
@@ -580,8 +570,6 @@ export function App() {
           editor={editor}
           defaultFont={defaultFont}
           onDefaultFontChange={setDefaultFont}
-          theme={theme}
-          onThemeChange={setTheme}
           onOpenStories={() => setIsDrawerOpen(true)}
           onCreateStory={handleCreateStory}
           readAloudStatus={readAloudStatus}
@@ -675,13 +663,11 @@ export function App() {
             spellCheck={false}
             aria-label="Story Title"
             style={{ color: 'var(--ink)' }}
-            className={`mb-6 w-full border-b border-transparent bg-transparent pb-2 text-2xl font-bold tracking-tight placeholder:opacity-45 focus:border-current/15 focus:outline-none sm:text-3xl ${
-              isLined ? 'sm:pl-16' : ''
-            }`}
+            className="mb-6 w-full border-b border-transparent bg-transparent pb-2 text-2xl font-bold tracking-tight placeholder:opacity-45 focus:border-current/15 focus:outline-none sm:text-3xl"
           />
 
           {/* Tiptap Writing Surface */}
-          <div className={`kidword-editor ${isLined ? 'paper-lined rounded-lg sm:pl-16' : ''}`}>
+          <div className="kidword-editor">
             <EditorContent editor={editor} />
           </div>
         </div>
