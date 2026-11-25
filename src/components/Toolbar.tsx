@@ -26,6 +26,37 @@ import {
 export type ReadAloudStatus = 'idle' | 'playing' | 'paused';
 export type ReadAloudSpeed = 'slow' | 'normal';
 
+const RAINBOW_WHEEL_BG =
+  'conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7, #ec4899, #ef4444)';
+
+function normalizeToHex(raw: string): string {
+  const trimmed = raw.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) {
+    return trimmed.toLowerCase();
+  }
+  if (/^#[0-9a-fA-F]{3}$/.test(trimmed)) {
+    const [, r, g, b] = trimmed;
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  const rgbMatch = trimmed.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (rgbMatch) {
+    const toHex = (n: string) =>
+      Math.max(0, Math.min(255, Number.parseInt(n, 10)))
+        .toString(16)
+        .padStart(2, '0');
+    return `#${toHex(rgbMatch[1])}${toHex(rgbMatch[2])}${toHex(rgbMatch[3])}`;
+  }
+  return '';
+}
+
+function isLightHex(hex: string): boolean {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return false;
+  const r = Number.parseInt(hex.slice(1, 3), 16);
+  const g = Number.parseInt(hex.slice(3, 5), 16);
+  const b = Number.parseInt(hex.slice(5, 7), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 165;
+}
+
 interface ToolbarProps {
   editor: Editor | null;
   defaultFont: string;
@@ -66,9 +97,14 @@ export function Toolbar({
   }
 
   const textStyleAttrs = editor.getAttributes('textStyle');
-  const activeColor = (textStyleAttrs.color as string | undefined) ?? '';
+  const rawActiveColor = (textStyleAttrs.color as string | undefined) ?? '';
+  const activeColor = rawActiveColor ? normalizeToHex(rawActiveColor) || rawActiveColor : '';
   const activeFontSize = (textStyleAttrs.fontSize as string | undefined) ?? '';
   const activeFontFamily = (textStyleAttrs.fontFamily as string | undefined) || defaultFont;
+  const isCustomColorActive =
+    activeColor !== '' &&
+    !COLOR_SWATCHES.some((s) => s.value !== '' && s.value.toLowerCase() === activeColor.toLowerCase());
+  const customPickerHex = /^#[0-9a-f]{6}$/i.test(activeColor) ? activeColor : '#ec4899';
 
   const handleFontChange = (fontValue: string) => {
     const { empty } = editor.state.selection;
@@ -245,7 +281,7 @@ export function Toolbar({
 
           <Divider />
 
-          {/* 8 High-Contrast Color Swatches */}
+          {/* 8 High-Contrast Color Swatches + Custom Color Picker */}
           <div className="flex items-center gap-1.5" role="group" aria-label="Text colors">
             {COLOR_SWATCHES.map((swatch) => {
               const isActive =
@@ -272,6 +308,44 @@ export function Toolbar({
                 </button>
               );
             })}
+
+            {/* Custom Color Wheel Picker */}
+            <label
+              title="Pick any custom colour"
+              style={
+                isCustomColorActive
+                  ? { backgroundColor: customPickerHex }
+                  : { backgroundImage: RAINBOW_WHEEL_BG }
+              }
+              className={`color-swatch relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-2 transition-transform hover:scale-110 focus-within:outline-3 focus-within:outline-offset-2 focus-within:outline-blue-600 ${
+                isCustomColorActive
+                  ? 'scale-110 border-white ring-2 ring-blue-500'
+                  : 'border-black/20'
+              }`}
+            >
+              <input
+                type="color"
+                value={customPickerHex}
+                aria-label="Pick any custom text colour"
+                onChange={(e) => {
+                  editor.commands.setColor(e.target.value);
+                }}
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
+              {isCustomColorActive ? (
+                <Check
+                  className={`pointer-events-none h-3.5 w-3.5 stroke-[3] ${
+                    isLightHex(customPickerHex) ? 'text-slate-900' : 'text-white'
+                  }`}
+                  aria-hidden="true"
+                />
+              ) : (
+                <span
+                  className="pointer-events-none h-2.5 w-2.5 rounded-full bg-white/90 shadow-xs"
+                  aria-hidden="true"
+                />
+              )}
+            </label>
           </div>
         </div>
 
