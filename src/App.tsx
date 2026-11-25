@@ -99,6 +99,7 @@ export function App() {
   const [pinnedIdea, setPinnedIdea] = useState<string | null>(null);
   const [ideaCollapsed, setIdeaCollapsed] = useState(false);
   const [wordCount, setWordCount] = useState(0);
+  const [isBodyEmpty, setIsBodyEmpty] = useState(true);
   const [isPageEmojiOpen, setIsPageEmojiOpen] = useState(false);
 
   const pageEmojiRef = useRef<HTMLDivElement | null>(null);
@@ -196,6 +197,7 @@ export function App() {
     },
     onUpdate: ({ editor: currentEditor }) => {
       setWordCount(countWords(currentEditor.getText()));
+      setIsBodyEmpty(currentEditor.isEmpty);
       scheduleSaveRef.current();
       scheduleSpellCheckRef.current();
     },
@@ -415,6 +417,7 @@ export function App() {
       setDefaultFont(active.fontFamily || FONTS[0].value);
       editor.commands.setContent(active.htmlContent || '<p></p>', false);
       setWordCount(countWords(editor.getText()));
+      setIsBodyEmpty(editor.isEmpty);
       setSaveStatus('saved');
       requestAnimationFrame(() => {
         skipNextSaveRef.current = false;
@@ -630,6 +633,7 @@ export function App() {
       setDefaultFont(story.fontFamily || FONTS[0].value);
       editor.commands.setContent(story.htmlContent || '<p></p>', false);
       setWordCount(countWords(editor.getText()));
+      setIsBodyEmpty(editor.isEmpty);
       setSaveStatus('saved');
       setClickedSpellError(null);
       setIsPageEmojiOpen(false);
@@ -985,7 +989,7 @@ export function App() {
           )}
 
           {/* Tiptap Writing Surface */}
-          <div className="kidword-editor">
+          <div className={`kidword-editor ${isBodyEmpty ? 'is-body-empty' : ''}`}>
             <EditorContent editor={editor} />
           </div>
         </div>

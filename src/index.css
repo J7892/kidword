@@ -64,6 +64,16 @@ body {
 }
 
 /* Tiptap Editor Surface */
+.kidword-editor.is-body-empty .ProseMirror p:first-child::before {
+  content: "What do you want to say?";
+  color: var(--ink-muted);
+  font-style: italic;
+  opacity: 0.7;
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
 .kidword-editor .ProseMirror {
   outline: none;
   font-size: 18px;
@@ -227,5 +237,9 @@ dialog::backdrop {
 
   .read-aloud-active {
     background: transparent !important;
+  }
+
+  .kidword-editor.is-body-empty .ProseMirror p:first-child::before {
+    display: none;
   }
 }
