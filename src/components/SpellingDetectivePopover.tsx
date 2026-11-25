@@ -159,6 +159,7 @@ export function SpellingDetectivePopover({
 }: SpellingDetectivePopoverProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const slotRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const pendingAutoFocusRef = useRef(false);
   const recognitionRef = useRef<SpeechRecognitionInstanceLike | null>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const feedbackTimerRef = useRef<number | null>(null);
@@ -236,8 +237,10 @@ export function SpellingDetectivePopover({
       }
 
       setLockedTarget(nextTarget);
+      slotRefs.current = [];
       const initialSlots = buildInitialSlots(typedWord, nextTarget);
       setSlots(initialSlots);
+      pendingAutoFocusRef.current = true;
 
       // Seed yellow clues from any misplaced letters in the child's original typed word
       const initialEval = evaluateTypedLetters(typedWord, nextTarget);
@@ -249,10 +252,8 @@ export function SpellingDetectivePopover({
         )
       );
       setYellowClueLetters(initialYellows);
-
-      focusFirstEmptySlot(initialSlots);
     },
-    [clearTimers, focusFirstEmptySlot]
+    [clearTimers]
   );
 
   // Track online/offline status for voice fallback visibility
@@ -297,19 +298,54 @@ export function SpellingDetectivePopover({
   useEffect(() => {
     if (peekSecondsLeft === null) return;
     if (peekSecondsLeft <= 0) {
+      pendingAutoFocusRef.current = true;
       setPeekSecondsLeft(null);
-      focusFirstEmptySlot(slots);
       return;
     }
     const timer = window.setTimeout(() => {
       setPeekSecondsLeft((prev) => {
         if (prev !== null && prev > 1) return prev - 1;
-        requestAnimationFrame(() => focusFirstEmptySlot(slots));
+        pendingAutoFocusRef.current = true;
         return null;
       });
     }, 1000);
     return () => window.clearTimeout(timer);
-  }, [peekSecondsLeft, focusFirstEmptySlot, slots]);
+  }, [peekSecondsLeft]);
+
+  const isPeeking = peekSecondsLeft !== null && peekSecondsLeft > 0;
+
+  // Focus the first blank input AFTER the slot inputs have mounted and are enabled
+  useEffect(() => {
+    if (!pendingAutoFocusRef.current || !lockedTarget || slots.length === 0 || isPeeking) {
+      return;
+    }
+
+    const firstEmpty = slots.findIndex((s) => !s.locked && !s.value);
+    const targetIdx = firstEmpty !== -1 ? firstEmpty : slots.findIndex((s) => !s.locked);
+    if (targetIdx === -1) {
+      pendingAutoFocusRef.current = false;
+      return;
+    }
+
+    const applyFocus = () => {
+      const el = slotRefs.current[targetIdx];
+      if (el && !el.disabled) {
+        if (document.activeElement !== el) {
+          el.focus();
+        }
+        if (document.activeElement === el) {
+          pendingAutoFocusRef.current = false;
+        }
+      }
+    };
+
+    applyFocus();
+    const confirmTimer = window.setTimeout(() => {
+      applyFocus();
+      pendingAutoFocusRef.current = false;
+    }, 35);
+    return () => window.clearTimeout(confirmTimer);
+  }, [slots, lockedTarget, isPeeking]);
 
   // Close on Escape or clicking outside the card
   useEffect(() => {
@@ -354,7 +390,6 @@ export function SpellingDetectivePopover({
 
   const typed = error?.word ?? '';
   const target = lockedTarget;
-  const isPeeking = peekSecondsLeft !== null && peekSecondsLeft > 0;
 
   const typedTiles = useMemo(() => {
     if (!target || !typed) return [];

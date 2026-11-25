@@ -154,7 +154,7 @@ export const SpellCheck = Extension.create<SpellCheckOptions>({
               to: matched?.to ?? pos,
               rect: span.getBoundingClientRect(),
             });
-            return false;
+            return true;
           },
         },
       }),
