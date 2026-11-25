@@ -154,11 +154,54 @@ export function SpellingDetectivePopover({
     return { left: `${left}px`, top: `${top}px`, width: `${cardWidth}px` };
   }, [error]);
 
-  if (!error) return null;
-
-  const typed = error.word;
+  const typed = error?.word ?? '';
   const target = lockedTarget;
   const isPeeking = peekSecondsLeft !== null && peekSecondsLeft > 0;
+
+  const tiles = useMemo(() => {
+    if (!target) return [];
+
+    // First pass: letters the child already matched in the right position + first letter
+    const revealed = target.split('').map((char, idx) => {
+      const typedChar = typed[idx];
+      const isMatched =
+        typedChar !== undefined && typedChar.toLowerCase() === char.toLowerCase();
+      return {
+        char,
+        isMatched,
+        isRevealed: isPeeking || idx === 0 || isMatched,
+      };
+    });
+
+    const countBlanks = () => revealed.filter((t) => !t.isRevealed).length;
+
+    // Reveal the last letter in Step 1 only if at least 2 blanks remain,
+    // so we never give away the entire word in Step 1.
+    const lastIdx = target.length - 1;
+    if (lastIdx > 0 && !revealed[lastIdx].isRevealed && countBlanks() >= 2) {
+      revealed[lastIdx].isRevealed = true;
+    }
+
+    // Step 2: reveal vowels / middle tricky letters while keeping at least 1 blank
+    // (the full word is reserved for Step 3: 3-Second Peek).
+    if (step2Unlocked && !isPeeking) {
+      for (let idx = 1; idx < target.length - 1; idx++) {
+        if (countBlanks() <= 1) break;
+        const ch = target[idx].toLowerCase();
+        const isMiddle =
+          idx === Math.floor(target.length / 2) ||
+          idx === Math.floor((target.length - 1) / 2);
+        if (!revealed[idx].isRevealed && (VOWELS.has(ch) || isMiddle)) {
+          revealed[idx].isRevealed = true;
+        }
+      }
+    }
+
+    return revealed;
+  }, [target, typed, isPeeking, step2Unlocked]);
+
+  if (!error) return null;
+
   const isAudioPickerActive = !target && audioCandidates.length >= 2;
 
   const speechWin = window as WindowWithSpeechRecognition;
@@ -243,24 +286,6 @@ export function SpellingDetectivePopover({
       setVoiceError('Microphone is busy. Try again!');
     }
   };
-
-  const tiles = target
-    ? target.split('').map((char, idx) => {
-        const isFirstOrLast = idx === 0 || idx === target.length - 1;
-        const typedChar = typed[idx];
-        const isMatched =
-          typedChar !== undefined && typedChar.toLowerCase() === char.toLowerCase();
-        const isVowel = VOWELS.has(char.toLowerCase());
-        const isMiddle =
-          idx === Math.floor(target.length / 2) ||
-          idx === Math.floor((target.length - 1) / 2);
-
-        const revealedByStep2 = step2Unlocked && (isVowel || isMiddle);
-        const isRevealed = isPeeking || isFirstOrLast || isMatched || revealedByStep2;
-
-        return { char, isMatched, isRevealed };
-      })
-    : [];
 
   return (
     <div
