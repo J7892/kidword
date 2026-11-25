@@ -608,22 +608,7 @@ export function App() {
     (promptText: string) => {
       setPinnedIdea(promptText);
       setIdeaCollapsed(false);
-      if (editor && editor.getText().trim() === '') {
-        editor.commands.setContent(
-          {
-            type: 'doc',
-            content: [
-              {
-                type: 'paragraph',
-                content: [{ type: 'text', marks: [{ type: 'italic' }], text: promptText }],
-              },
-              { type: 'paragraph' },
-            ],
-          },
-          true
-        );
-        editor.commands.focus('end');
-      }
+      editor?.commands.focus();
     },
     [editor]
   );
