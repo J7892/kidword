@@ -13,7 +13,6 @@ interface StoriesDrawerProps {
   onUpdateStoryIcon: (storyId: string, icon: string) => void;
   onDeleteStory: (storyId: string) => void;
   onOpenParentSettings: () => void;
-  isNightMode: boolean;
 }
 
 function countWords(text: string): number {
@@ -46,7 +45,6 @@ export function StoriesDrawer({
   onUpdateStoryIcon,
   onDeleteStory,
   onOpenParentSettings,
-  isNightMode,
 }: StoriesDrawerProps) {
   const drawerRef = useRef<HTMLDialogElement>(null);
   const confirmRef = useRef<HTMLDialogElement>(null);
@@ -186,7 +184,7 @@ export function StoriesDrawer({
                 <div
                   key={story.id}
                   style={{
-                    backgroundColor: isNightMode ? palette.tintDark : palette.tintLight,
+                    backgroundColor: palette.tintLight,
                     borderColor: isActive ? palette.spine : 'var(--page-border)',
                   }}
                   className={`relative overflow-hidden rounded-2xl border-2 transition ${
@@ -207,7 +205,7 @@ export function StoriesDrawer({
                       onClick={() => setEmojiPickerForId(showEmojiPicker ? null : story.id)}
                       aria-label={`Change icon for ${story.title || 'Untitled Story'}`}
                       title="Pick a cover icon"
-                      className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white/80 text-2xl shadow-sm transition hover:scale-105 dark:bg-black/25"
+                      className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white/80 text-2xl shadow-sm transition hover:scale-105"
                     >
                       {story.icon || '📝'}
                     </button>

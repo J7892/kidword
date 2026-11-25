@@ -124,7 +124,7 @@ export function WhatsAppShareModal({
       </div>
 
       {isVeryLong && (
-        <div className="mt-4 flex items-start gap-2.5 rounded-2xl border border-amber-400/50 bg-amber-500/15 p-3 text-xs font-semibold text-amber-800 dark:text-amber-200">
+        <div className="mt-4 flex items-start gap-2.5 rounded-2xl border border-amber-400/50 bg-amber-500/15 p-3 text-xs font-semibold text-amber-900">
           <ClipboardCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <span>
             {copiedNotice

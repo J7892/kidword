@@ -354,7 +354,7 @@ export function ParentSettingsModal({
                               setEditPhone(c.phone);
                             }}
                             aria-label={`Edit ${c.name}`}
-                            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg hover:bg-black/10 dark:hover:bg-white/10"
+                            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg hover:bg-black/10"
                           >
                             <Pencil className="h-4 w-4" aria-hidden="true" />
                           </button>

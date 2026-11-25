@@ -48,7 +48,7 @@ export function buildReadAloudDecoration(
   doc: ProseMirrorNode,
   range: { from: number; to: number } | null
 ): DecorationSet {
-  if (!range || range.from >= range.to || range.to > doc.content.size) {
+  if (!range || range.from < 0 || range.from >= range.to || range.to > doc.content.size) {
     return DecorationSet.empty;
   }
   return DecorationSet.create(doc, [

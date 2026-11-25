@@ -88,7 +88,6 @@ export default defineConfig({
             '@tiptap/extension-text-style',
             '@tiptap/extension-color',
             '@tiptap/extension-font-family',
-            '@tiptap/extension-text-align',
           ],
           'icons-vendor': ['lucide-react'],
         },

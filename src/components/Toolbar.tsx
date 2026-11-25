@@ -72,8 +72,12 @@ export function Toolbar({
     const { empty } = editor.state.selection;
     if (empty) {
       onDefaultFontChange(fontValue);
+      editor.chain().focus().unsetFontFamily().run();
+    } else if (fontValue === defaultFont) {
+      editor.chain().focus().unsetFontFamily().run();
+    } else {
+      editor.chain().focus().setFontFamily(fontValue).run();
     }
-    editor.chain().focus().setFontFamily(fontValue).run();
   };
 
   const handleSizeChange = (sizeValue: string) => {
@@ -231,7 +235,7 @@ export function Toolbar({
                   className={`color-swatch flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-2 transition-transform hover:scale-110 ${
                     isActive
                       ? 'scale-110 border-white ring-2 ring-blue-500'
-                      : 'border-black/20 dark:border-white/25'
+                      : 'border-black/20'
                   }`}
                 >
                   {isActive && <Check className="h-3.5 w-3.5 text-white stroke-[3]" aria-hidden="true" />}
@@ -253,7 +257,7 @@ export function Toolbar({
                 style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
                 className="flex h-10 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition hover:opacity-90"
               >
-                <Volume2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                <Volume2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />
                 <span className="hidden md:inline">Read My Story</span>
               </button>
             ) : (
@@ -286,7 +290,7 @@ export function Toolbar({
                   aria-label="Stop reading"
                   title="Stop"
                   style={{ color: 'var(--ink)' }}
-                  className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition hover:bg-black/10 dark:hover:bg-white/10"
+                  className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition hover:bg-black/10"
                 >
                   <Square className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
                 </button>
@@ -296,7 +300,7 @@ export function Toolbar({
                   aria-label={`Reading speed: ${readAloudSpeed}`}
                   title="Switch between Slow and Normal reading speed"
                   style={{ color: 'var(--ink)' }}
-                  className="h-8 cursor-pointer rounded-lg px-2 text-xs font-bold transition hover:bg-black/10 dark:hover:bg-white/10"
+                  className="h-8 cursor-pointer rounded-lg px-2 text-xs font-bold transition hover:bg-black/10"
                 >
                   {readAloudSpeed === 'slow' ? '🐢 Slow' : '🐇 Normal'}
                 </button>

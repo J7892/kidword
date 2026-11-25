@@ -188,7 +188,9 @@ function checkBlocks(
       const start = match.index;
       const end = start + word.length;
 
-      if (word.length <= 1 || /^[A-Z]+$/.test(word)) {
+      // Skip single-letter words and short 2-3 letter acronyms (e.g. TV, BC, USA),
+      // while still checking 4+ letter ALL-CAPS words in case Caps Lock is left on.
+      if (word.length <= 1 || /^[A-Z]{2,3}$/.test(word)) {
         continue;
       }
 
@@ -202,8 +204,11 @@ function checkBlocks(
       }
 
       const normalized = word.replaceAll('’', "'");
+      const isAllCaps = /^[A-ZÀ-ÖØ-Þ]+$/.test(normalized);
+      const lookupWord = isAllCaps ? normalized.toLowerCase() : normalized;
+
       if (!spell.correct(normalized) && !spell.correct(normalized.toLowerCase())) {
-        const suggestions = spell.suggest(normalized);
+        const suggestions = spell.suggest(lookupWord);
         if (suggestions.length > 0) {
           errors.push({
             from: block.pos + start,
@@ -213,7 +218,7 @@ function checkBlocks(
             phoneticCandidates: [],
           });
         } else {
-          const phonetic = findPhoneticCandidates(normalized);
+          const phonetic = findPhoneticCandidates(lookupWord);
           errors.push({
             from: block.pos + start,
             to: block.pos + end,

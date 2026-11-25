@@ -1,8 +1,7 @@
 @import "tailwindcss";
-@custom-variant dark (&:where([data-theme="night-mode"], [data-theme="night-mode"] *));
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --desk-bg: #f3ede0;
   --page-bg: #fbf7ee;
   --page-border: #e4dac6;
@@ -16,12 +15,6 @@
   --control-active-bg: #2563eb;
   --control-active-text: #ffffff;
   --accent: #2563eb;
-  --notebook-line: rgba(148, 179, 214, 0.42);
-  --notebook-margin: rgba(226, 120, 120, 0.38);
-}
-
-:root[data-theme="warm-paper"] {
-  color-scheme: light;
 }
 
 * {
@@ -122,8 +115,8 @@ body {
   border-radius: 4px;
 }
 
-:root[data-theme="night-mode"] .read-aloud-active {
-  background-color: rgba(250, 204, 21, 0.25);
+.print-only {
+  display: none;
 }
 
 /* Friendly focus-visible ring */
@@ -155,6 +148,12 @@ dialog::backdrop {
   .no-print,
   dialog {
     display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
 
   html,

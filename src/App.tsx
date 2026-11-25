@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
+import type { EditorView } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import TextStyle from '@tiptap/extension-text-style';
@@ -14,6 +15,7 @@ import { Toolbar, type ReadAloudSpeed, type ReadAloudStatus } from './components
 import { WhatsAppShareModal } from './components/WhatsAppShareModal';
 import { FONTS, type PageTheme } from './constants/editorConfig';
 import {
+  clearAllStories,
   createBlankStory,
   deleteStory,
   getAllStories,
@@ -48,6 +50,25 @@ import type { SpellWorkerRequest, SpellWorkerResponse } from './workers/spellche
 
 type SaveStatus = 'idle' | 'saving' | 'saved';
 
+const WORD_CHAR_REGEX = /[A-Za-zÀ-ÖØ-öø-ÿ'’]/;
+
+function computeWordDomRect(view: EditorView, from: number, to: number): DOMRect | null {
+  try {
+    const docSize = view.state.doc.content.size;
+    const safeFrom = Math.max(0, Math.min(from, docSize));
+    const safeTo = Math.max(safeFrom, Math.min(to, docSize));
+    const start = view.coordsAtPos(safeFrom);
+    const end = view.coordsAtPos(safeTo);
+    const left = Math.min(start.left, end.left);
+    const right = Math.max(start.right, end.right);
+    const top = Math.min(start.top, end.top);
+    const bottom = Math.max(start.bottom, end.bottom);
+    return new DOMRect(left, top, Math.max(1, right - left), Math.max(1, bottom - top));
+  } catch {
+    return null;
+  }
+}
+
 export function App() {
   const [stories, setStories] = useState<StoryRecord[]>([]);
   const [activeStory, setActiveStory] = useState<StoryRecord | null>(null);
@@ -80,6 +101,7 @@ export function App() {
   const readSentencesRef = useRef<SpokenSentence[]>([]);
   const readIndexRef = useRef(0);
   const readActiveSessionRef = useRef(0);
+  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const clickedSpellErrorRef = useRef<ClickedSpellError | null>(null);
 
   useEffect(() => {
@@ -114,7 +136,10 @@ export function App() {
         updatedAt: Date.now(),
       };
       await saveStory(updated);
-      setActiveStory(updated);
+      if (activeStoryRef.current?.id === updated.id) {
+        activeStoryRef.current = updated;
+        setActiveStory(updated);
+      }
       setStories((prev) => {
         const others = prev.filter((s) => s.id !== updated.id);
         return [updated, ...others];
@@ -153,28 +178,83 @@ export function App() {
       scheduleSaveRef.current();
       scheduleSpellCheckRef.current();
     },
-    onSelectionUpdate: () => {
+    onSelectionUpdate: ({ editor: currentEditor }) => {
       scheduleSpellCheckRef.current();
+      const activeErr = clickedSpellErrorRef.current;
+      if (!activeErr) return;
+      const { from: selFrom, to: selTo } = currentEditor.state.selection;
+      if (selFrom !== selTo || selFrom < activeErr.from || selFrom > activeErr.to) {
+        setClickedSpellError(null);
+      }
     },
-    onTransaction: ({ transaction }) => {
+    onTransaction: ({ editor: currentEditor, transaction }) => {
       if (!transaction.docChanged || !clickedSpellErrorRef.current) return;
-      setClickedSpellError((prev) => {
-        if (!prev) return null;
-        const maxPos = transaction.doc.content.size;
-        const from = Math.max(0, Math.min(transaction.mapping.map(prev.from, -1), maxPos));
-        const mappedTo = Math.max(from, Math.min(transaction.mapping.map(prev.to, 1), maxPos));
-        const raw = transaction.doc.textBetween(from, mappedTo, '\n', '\n');
-        const match = raw.match(/^[A-Za-zÀ-ÖØ-öø-ÿ'’]+/);
-        const nextWord = match ? match[0] : '';
+
+      const prev = clickedSpellErrorRef.current;
+      const maxPos = transaction.doc.content.size;
+      const mappedFrom = Math.max(0, Math.min(transaction.mapping.map(prev.from, -1), maxPos));
+
+      const $pos = transaction.doc.resolve(mappedFrom);
+      if (!$pos.parent.isTextblock) {
+        setClickedSpellError(null);
+        return;
+      }
+
+      const blockStart = $pos.start();
+      const blockText = $pos.parent.textBetween(0, $pos.parent.content.size, '\n', '\n');
+      let relStart = Math.max(0, Math.min(mappedFrom - blockStart, blockText.length));
+
+      // Expand left in case the user inserted/replaced characters before prev.from
+      while (relStart > 0 && WORD_CHAR_REGEX.test(blockText[relStart - 1])) {
+        relStart -= 1;
+      }
+
+      let relEnd = relStart;
+      while (relEnd < blockText.length && WORD_CHAR_REGEX.test(blockText[relEnd])) {
+        relEnd += 1;
+      }
+
+      const nextWord = blockText.slice(relStart, relEnd);
+      const wordFrom = blockStart + relStart;
+      const wordTo = blockStart + relEnd;
+
+      const caret = transaction.selection.from;
+      if (!transaction.selection.empty || caret < wordFrom || caret > wordTo) {
+        setClickedSpellError(null);
+        return;
+      }
+
+      setClickedSpellError((curr) => {
+        if (!curr || curr.id !== prev.id) return curr;
         return {
-          ...prev,
-          from,
-          to: from + nextWord.length,
+          ...curr,
+          from: wordFrom,
+          to: wordTo,
           word: nextWord,
         };
       });
+
+      requestAnimationFrame(() => {
+        if (currentEditor.isDestroyed) return;
+        const nextRect = computeWordDomRect(currentEditor.view, wordFrom, wordTo);
+        if (!nextRect) return;
+        setClickedSpellError((curr) => {
+          if (!curr || curr.id !== prev.id) return curr;
+          return { ...curr, rect: nextRect };
+        });
+      });
     },
   });
+
+  const flushPendingSave = useCallback(async () => {
+    if (saveTimerRef.current === null) return;
+    window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = null;
+    const current = activeStoryRef.current;
+    if (!current || !editor) return;
+    const { title: t, theme: th, defaultFont: df } = latestRef.current;
+    await performSave(current, t, editor.getHTML(), editor.getText(), th, df);
+  }, [editor, performSave]);
 
   const scheduleSave = useCallback(() => {
     if (skipNextSaveRef.current) return;
@@ -183,6 +263,7 @@ export function App() {
     }
     setSaveStatus('saving');
     saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
       const current = activeStoryRef.current;
       if (!current || !editor) return;
       const { title: t, theme: th, defaultFont: df } = latestRef.current;
@@ -193,6 +274,46 @@ export function App() {
   useEffect(() => {
     scheduleSaveRef.current = scheduleSave;
   }, [scheduleSave]);
+
+  // Flush pending save if the tab hides or Chromebook lid closes
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        void flushPendingSave();
+      }
+    };
+    const handlePageHide = () => {
+      void flushPendingSave();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [flushPendingSave]);
+
+  // Keep Spelling Detective popover anchored to the word when scrolling or resizing
+  useEffect(() => {
+    if (!clickedSpellError || !editor) return;
+    const activeId = clickedSpellError.id;
+
+    const updateAnchor = () => {
+      const curr = clickedSpellErrorRef.current;
+      if (!curr || curr.id !== activeId || editor.isDestroyed) return;
+      const nextRect = computeWordDomRect(editor.view, curr.from, curr.to);
+      if (nextRect) {
+        setClickedSpellError((prev) => (prev && prev.id === activeId ? { ...prev, rect: nextRect } : prev));
+      }
+    };
+
+    window.addEventListener('scroll', updateAnchor, true);
+    window.addEventListener('resize', updateAnchor);
+    return () => {
+      window.removeEventListener('scroll', updateAnchor, true);
+      window.removeEventListener('resize', updateAnchor);
+    };
+  }, [clickedSpellError?.id, editor]);
 
   const runSpellCheckNow = useCallback(() => {
     const worker = spellWorkerRef.current;
@@ -342,6 +463,7 @@ export function App() {
 
   const stopReadAloud = useCallback(() => {
     readActiveSessionRef.current += 1;
+    activeUtteranceRef.current = null;
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
@@ -373,7 +495,9 @@ export function App() {
       editor.view.dispatch(editor.state.tr.setMeta(readAloudPluginKey, { decorations }));
 
       const utterance = new SpeechSynthesisUtterance(sentence.text);
+      utterance.lang = 'en-CA';
       utterance.rate = speed === 'slow' ? 0.78 : 1.0;
+      activeUtteranceRef.current = utterance;
 
       utterance.onend = () => {
         if (sessionId !== readActiveSessionRef.current) return;
@@ -402,27 +526,47 @@ export function App() {
     if (readAloudStatus === 'paused') {
       window.speechSynthesis.resume();
       setReadAloudStatus('playing');
+      // Chrome OS speechSynthesis can drop paused utterances after ~15s;
+      // if resume didn't restart speech, re-speak from the current sentence index.
+      window.setTimeout(() => {
+        if (
+          readActiveSessionRef.current > 0 &&
+          !window.speechSynthesis.speaking &&
+          !window.speechSynthesis.pending
+        ) {
+          const sessionId = ++readActiveSessionRef.current;
+          speakSentenceAt(readIndexRef.current, readAloudSpeed, sessionId);
+        }
+      }, 80);
       return;
     }
 
-    const sentences = extractSentences(editor.state.doc);
+    const bodySentences = extractSentences(editor.state.doc);
+    const cursorPos = editor.state.selection.from;
+    const cleanTitle = title.trim();
+
+    let sentences: SpokenSentence[] = bodySentences;
+    let startIdx = 0;
+
+    if (cursorPos > 1 && bodySentences.length > 0) {
+      const foundIdx = bodySentences.findIndex((s) => s.to >= cursorPos);
+      if (foundIdx !== -1) {
+        startIdx = foundIdx;
+      } else if (cleanTitle) {
+        sentences = [{ from: -1, to: -1, text: cleanTitle }, ...bodySentences];
+      }
+    } else if (cleanTitle) {
+      sentences = [{ from: -1, to: -1, text: cleanTitle }, ...bodySentences];
+    }
+
     if (sentences.length === 0) return;
 
     readSentencesRef.current = sentences;
-    const cursorPos = editor.state.selection.from;
-    let startIdx = 0;
-    if (cursorPos > 1) {
-      const foundIdx = sentences.findIndex((s) => s.to >= cursorPos);
-      if (foundIdx !== -1) {
-        startIdx = foundIdx;
-      }
-    }
-
     window.speechSynthesis.cancel();
     const sessionId = ++readActiveSessionRef.current;
     setReadAloudStatus('playing');
     speakSentenceAt(startIdx, readAloudSpeed, sessionId);
-  }, [editor, readAloudSpeed, readAloudStatus, speakSentenceAt]);
+  }, [editor, readAloudSpeed, readAloudStatus, speakSentenceAt, title]);
 
   const handleToggleReadSpeed = useCallback(() => {
     const nextSpeed: ReadAloudSpeed = readAloudSpeed === 'normal' ? 'slow' : 'normal';
@@ -441,7 +585,19 @@ export function App() {
       setPinnedIdea(promptText);
       setIdeaCollapsed(false);
       if (editor && editor.getText().trim() === '') {
-        editor.commands.setContent(`<p><em>${promptText}</em></p><p></p>`, true);
+        editor.commands.setContent(
+          {
+            type: 'doc',
+            content: [
+              {
+                type: 'paragraph',
+                content: [{ type: 'text', marks: [{ type: 'italic' }], text: promptText }],
+              },
+              { type: 'paragraph' },
+            ],
+          },
+          true
+        );
         editor.commands.focus('end');
       }
     },
@@ -454,8 +610,10 @@ export function App() {
       stopReadAloud();
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
       }
       skipNextSaveRef.current = true;
+      activeStoryRef.current = story;
       setActiveStory(story);
       setActiveStoryId(story.id);
       setTitle(story.title);
@@ -471,6 +629,24 @@ export function App() {
     },
     [editor, runSpellCheckNow, stopReadAloud]
   );
+
+  const handleSelectStory = useCallback(
+    async (story: StoryRecord) => {
+      await flushPendingSave();
+      loadStoryIntoEditor(story);
+    },
+    [flushPendingSave, loadStoryIntoEditor]
+  );
+
+  const handleOpenStories = useCallback(async () => {
+    await flushPendingSave();
+    setIsDrawerOpen(true);
+  }, [flushPendingSave]);
+
+  const handleOpenParentSettings = useCallback(async () => {
+    await flushPendingSave();
+    setIsParentSettingsOpen(true);
+  }, [flushPendingSave]);
 
   const handleAddPersonalWord = useCallback(
     (word: string) => {
@@ -526,22 +702,33 @@ export function App() {
 
   const handleRestoreBackup = useCallback(
     async (backup: KidWordBackup) => {
-      for (const story of backup.stories) {
-        await saveStory(story);
+      if (saveTimerRef.current !== null) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
       }
-      const all = await getAllStories();
+      if (backup.stories.length > 0) {
+        await clearAllStories();
+        for (const story of backup.stories) {
+          await saveStory({ ...story, theme: 'warm-paper' });
+        }
+      }
+      let all = await getAllStories();
+      if (all.length === 0) {
+        const fresh = createBlankStory('warm-paper', FONTS[0].value);
+        await saveStory(fresh);
+        all = [fresh];
+      }
       setStories(all);
       setContacts(backup.settings.whatsappContacts);
       setAllowPeekState(backup.settings.allowPeek);
       reloadWorkerPersonalWords(backup.settings.personalWords);
-      if (all.length > 0) {
-        loadStoryIntoEditor(all[0]);
-      }
+      loadStoryIntoEditor(all[0]);
     },
     [loadStoryIntoEditor, reloadWorkerPersonalWords]
   );
 
   const handleCreateStory = async () => {
+    await flushPendingSave();
     const fresh = createBlankStory(theme, defaultFont);
     await saveStory(fresh);
     const updatedList = await getAllStories();
@@ -550,17 +737,26 @@ export function App() {
   };
 
   const handleUpdateStoryIcon = async (storyId: string, icon: string) => {
-    const target = stories.find((s) => s.id === storyId);
+    await flushPendingSave();
+    const all = await getAllStories();
+    const target = all.find((s) => s.id === storyId);
     if (!target) return;
     const updated: StoryRecord = { ...target, icon };
     await saveStory(updated);
-    setStories((prev) => prev.map((s) => (s.id === storyId ? updated : s)));
-    if (activeStory?.id === storyId) {
+    setStories(all.map((s) => (s.id === storyId ? updated : s)));
+    if (activeStoryRef.current?.id === storyId) {
+      activeStoryRef.current = updated;
       setActiveStory(updated);
     }
   };
 
   const handleDeleteStory = async (storyId: string) => {
+    if (activeStoryRef.current?.id !== storyId) {
+      await flushPendingSave();
+    } else if (saveTimerRef.current !== null) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
     await deleteStory(storyId);
     let remaining = await getAllStories();
     if (remaining.length === 0) {
@@ -569,7 +765,7 @@ export function App() {
       remaining = [fresh];
     }
     setStories(remaining);
-    if (activeStory?.id === storyId) {
+    if (activeStoryRef.current?.id === storyId) {
       loadStoryIntoEditor(remaining[0]);
     }
   };
@@ -593,8 +789,8 @@ export function App() {
           editor={editor}
           defaultFont={defaultFont}
           onDefaultFontChange={setDefaultFont}
-          onOpenStories={() => setIsDrawerOpen(true)}
-          onCreateStory={handleCreateStory}
+          onOpenStories={() => void handleOpenStories()}
+          onCreateStory={() => void handleCreateStory()}
           readAloudStatus={readAloudStatus}
           readAloudSpeed={readAloudSpeed}
           onReadPlayPause={handleReadPlayPause}
@@ -655,7 +851,7 @@ export function App() {
                 onClick={() => setPinnedIdea(null)}
                 aria-label="Dismiss story idea"
                 style={{ color: 'var(--ink-muted)' }}
-                className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg transition hover:bg-black/10 dark:hover:bg-white/10"
+                className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg transition hover:bg-black/10"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -677,7 +873,7 @@ export function App() {
           style={{ fontFamily: defaultFont }}
           className="paper-surface mx-auto min-h-[78vh] w-full max-w-[780px] cursor-text rounded-2xl px-6 py-8 sm:px-14 sm:py-12"
         >
-          {/* Editable Story Title */}
+          {/* Editable Story Title (screen) */}
           <input
             type="text"
             value={title}
@@ -686,8 +882,15 @@ export function App() {
             spellCheck={false}
             aria-label="Story Title"
             style={{ color: 'var(--ink)' }}
-            className="mb-6 w-full border-b border-transparent bg-transparent pb-2 text-2xl font-bold tracking-tight placeholder:opacity-45 focus:border-current/15 focus:outline-none sm:text-3xl"
+            className="no-print mb-6 w-full border-b border-transparent bg-transparent pb-2 text-2xl font-bold tracking-tight placeholder:opacity-45 focus:border-current/15 focus:outline-none sm:text-3xl"
           />
+
+          {/* Multi-line wrapping Story Title when printing (Ctrl+P) */}
+          {title.trim() && (
+            <h1 className="print-only mb-6 text-3xl font-bold leading-tight">
+              {title.trim()}
+            </h1>
+          )}
 
           {/* Tiptap Writing Surface */}
           <div className="kidword-editor">
@@ -720,12 +923,11 @@ export function App() {
         onClose={() => setIsDrawerOpen(false)}
         stories={stories}
         activeStoryId={activeStory?.id ?? ''}
-        onSelectStory={loadStoryIntoEditor}
-        onCreateStory={handleCreateStory}
-        onUpdateStoryIcon={handleUpdateStoryIcon}
-        onDeleteStory={handleDeleteStory}
-        onOpenParentSettings={() => setIsParentSettingsOpen(true)}
-        isNightMode={false}
+        onSelectStory={(story) => void handleSelectStory(story)}
+        onCreateStory={() => void handleCreateStory()}
+        onUpdateStoryIcon={(id, icon) => void handleUpdateStoryIcon(id, icon)}
+        onDeleteStory={(id) => void handleDeleteStory(id)}
+        onOpenParentSettings={() => void handleOpenParentSettings()}
       />
 
       {/* Parent Settings Modal (4-digit PIN) */}

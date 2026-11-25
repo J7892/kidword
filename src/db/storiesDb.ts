@@ -82,6 +82,11 @@ export async function deleteStory(id: string): Promise<void> {
   await db.delete(STORE_NAME, id);
 }
 
+export async function clearAllStories(): Promise<void> {
+  const db = await getDb();
+  await db.clear(STORE_NAME);
+}
+
 export function getActiveStoryId(): string | null {
   try {
     return localStorage.getItem(ACTIVE_ID_KEY);

@@ -59,11 +59,11 @@ export const STORY_EMOJIS = [
 ] as const;
 
 export const BOOK_CARD_COLORS = [
-  { spine: '#3B82F6', tintLight: '#EFF6FF', tintDark: 'rgba(59, 130, 246, 0.16)' },
-  { spine: '#10B981', tintLight: '#ECFDF5', tintDark: 'rgba(16, 185, 129, 0.16)' },
-  { spine: '#8B5CF6', tintLight: '#F5F3FF', tintDark: 'rgba(139, 92, 246, 0.16)' },
-  { spine: '#F59E0B', tintLight: '#FFFBEB', tintDark: 'rgba(245, 158, 11, 0.16)' },
-  { spine: '#EC4899', tintLight: '#FDF2F8', tintDark: 'rgba(236, 72, 153, 0.16)' },
-  { spine: '#06B6D4', tintLight: '#ECFEFF', tintDark: 'rgba(6, 182, 212, 0.16)' },
+  { spine: '#3B82F6', tintLight: '#EFF6FF' },
+  { spine: '#10B981', tintLight: '#ECFDF5' },
+  { spine: '#8B5CF6', tintLight: '#F5F3FF' },
+  { spine: '#F59E0B', tintLight: '#FFFBEB' },
+  { spine: '#EC4899', tintLight: '#FDF2F8' },
+  { spine: '#06B6D4', tintLight: '#ECFEFF' },
 ] as const;
 
