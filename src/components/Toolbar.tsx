@@ -1,7 +1,5 @@
 import type { Editor } from '@tiptap/react';
 import {
-  AlignCenter,
-  AlignLeft,
   Bold,
   BookOpen,
   Check,
@@ -253,26 +251,6 @@ export function Toolbar({
                 </button>
               );
             })}
-          </div>
-
-          <Divider />
-
-          {/* Alignment: Left, Center */}
-          <div className="flex items-center gap-1">
-            <ToolButton
-              label="Align Left"
-              active={editor.isActive({ textAlign: 'left' }) || !editor.isActive({ textAlign: 'center' })}
-              onClick={() => editor.chain().focus().setTextAlign('left').run()}
-            >
-              <AlignLeft className="h-4 w-4" aria-hidden="true" />
-            </ToolButton>
-            <ToolButton
-              label="Align Center"
-              active={editor.isActive({ textAlign: 'center' })}
-              onClick={() => editor.chain().focus().setTextAlign('center').run()}
-            >
-              <AlignCenter className="h-4 w-4" aria-hidden="true" />
-            </ToolButton>
           </div>
         </div>
 

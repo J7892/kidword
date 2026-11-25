@@ -5,7 +5,6 @@ import Underline from '@tiptap/extension-underline';
 import TextStyle from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import FontFamily from '@tiptap/extension-font-family';
-import TextAlign from '@tiptap/extension-text-align';
 import { Check, ChevronDown, ChevronUp, Eye, Sparkles, X } from 'lucide-react';
 import { ParentSettingsModal } from './components/ParentSettingsModal';
 import { SpellingDetectivePopover } from './components/SpellingDetectivePopover';
@@ -131,9 +130,6 @@ export function App() {
       Color,
       FontFamily,
       FontSize,
-      TextAlign.configure({
-        types: ['heading', 'paragraph'],
-      }),
       ReadAloudHighlight,
       SpellCheck.configure({
         onWordClick: (err) => {
