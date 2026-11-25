@@ -587,6 +587,7 @@ export function App() {
           theme={theme}
           onThemeChange={setTheme}
           onOpenStories={() => setIsDrawerOpen(true)}
+          onCreateStory={handleCreateStory}
           readAloudStatus={readAloudStatus}
           readAloudSpeed={readAloudSpeed}
           onReadPlayPause={handleReadPlayPause}

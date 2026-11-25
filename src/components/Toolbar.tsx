@@ -12,6 +12,7 @@ import {
   Notebook,
   Pause,
   Play,
+  Plus,
   Share2,
   Square,
   Sun,
@@ -36,6 +37,7 @@ interface ToolbarProps {
   theme: PageTheme;
   onThemeChange: (theme: PageTheme) => void;
   onOpenStories: () => void;
+  onCreateStory: () => void;
   readAloudStatus: ReadAloudStatus;
   readAloudSpeed: ReadAloudSpeed;
   onReadPlayPause: () => void;
@@ -55,6 +57,7 @@ export function Toolbar({
   theme,
   onThemeChange,
   onOpenStories,
+  onCreateStory,
   readAloudStatus,
   readAloudSpeed,
   onReadPlayPause,
@@ -119,16 +122,29 @@ export function Toolbar({
       >
         {/* Left & Center Formatting Groups */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* My Stories Drawer Button */}
-          <button
-            type="button"
-            onClick={onOpenStories}
-            title="Open My Stories library"
-            className="flex h-10 cursor-pointer items-center gap-1.5 rounded-xl bg-blue-600 px-3 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700"
-          >
-            <BookOpen className="h-4 w-4" aria-hidden="true" />
-            <span>My Stories</span>
-          </button>
+          {/* My Stories Drawer & New Story Buttons */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={onOpenStories}
+              title="Open My Stories library"
+              className="flex h-10 cursor-pointer items-center gap-1.5 rounded-xl bg-blue-600 px-3 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700"
+            >
+              <BookOpen className="h-4 w-4" aria-hidden="true" />
+              <span>My Stories</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onCreateStory}
+              title="Start a new blank story"
+              style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
+              className="flex h-10 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-sm font-bold transition hover:opacity-90"
+            >
+              <Plus className="h-4 w-4 stroke-[2.75]" aria-hidden="true" />
+              <span className="hidden sm:inline">New Story</span>
+            </button>
+          </div>
 
           <Divider />
 
