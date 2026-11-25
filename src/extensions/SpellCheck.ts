@@ -7,6 +7,7 @@ import type { SpellBlockInput, SpellErrorItem } from '../workers/spellcheck.work
 export interface ClickedSpellError {
   word: string;
   suggestion: string | null;
+  phoneticCandidates: string[];
   from: number;
   to: number;
   rect: DOMRect;
@@ -70,6 +71,7 @@ export function buildSpellDecorations(
           class: 'spell-error',
           'data-word': err.word,
           'data-suggestion': err.suggestion ?? '',
+          'data-candidates': err.phoneticCandidates.join('|'),
         })
       );
     }
@@ -126,11 +128,15 @@ export const SpellCheck = Extension.create<SpellCheckOptions>({
 
             const word = span.dataset.word || '';
             const suggestion = span.dataset.suggestion || null;
+            const phoneticCandidates = span.dataset.candidates
+              ? span.dataset.candidates.split('|').filter(Boolean)
+              : [];
             if (!word) return false;
 
             onWordClick({
               word,
               suggestion,
+              phoneticCandidates,
               from: matched?.from ?? pos,
               to: matched?.to ?? pos,
               rect: span.getBoundingClientRect(),

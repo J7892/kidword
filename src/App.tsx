@@ -76,6 +76,7 @@ export function App() {
   const spellWorkerRef = useRef<Worker | null>(null);
   const spellWorkerReadyRef = useRef(false);
   const spellRequestIdRef = useRef(0);
+  const phoneticResolversRef = useRef(new Map<number, (candidates: string[]) => void>());
   const activeStoryRef = useRef<StoryRecord | null>(null);
   const skipNextSaveRef = useRef(true);
   const readSentencesRef = useRef<SpokenSentence[]>([]);
@@ -230,6 +231,14 @@ export function App() {
         editor.view.dispatch(
           editor.state.tr.setMeta(spellcheckPluginKey, { decorations })
         );
+        return;
+      }
+      if (data.type === 'phonetic-result') {
+        const resolver = phoneticResolversRef.current.get(data.requestId);
+        if (resolver) {
+          phoneticResolversRef.current.delete(data.requestId);
+          resolver(data.candidates);
+        }
       }
     };
 
@@ -461,6 +470,27 @@ export function App() {
       runSpellCheckNow();
     },
     [runSpellCheckNow]
+  );
+
+  const handleRequestPhoneticLookup = useCallback(
+    (word: string, exclude?: string): Promise<string[]> => {
+      const worker = spellWorkerRef.current;
+      if (!worker || !spellWorkerReadyRef.current) {
+        return Promise.resolve([]);
+      }
+      const requestId = ++spellRequestIdRef.current;
+      return new Promise((resolve) => {
+        phoneticResolversRef.current.set(requestId, resolve);
+        const msg: SpellWorkerRequest = {
+          type: 'phonetic-lookup',
+          requestId,
+          word,
+          exclude,
+        };
+        worker.postMessage(msg);
+      });
+    },
+    []
   );
 
   const reloadWorkerPersonalWords = useCallback((words: string[]) => {
@@ -745,6 +775,7 @@ export function App() {
         allowPeek={allowPeek}
         onClose={() => setClickedSpellError(null)}
         onAddPersonalWord={handleAddPersonalWord}
+        onRequestPhoneticLookup={handleRequestPhoneticLookup}
       />
 
       {/* Story Spark Dice Modal */}

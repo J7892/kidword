@@ -18,6 +18,7 @@
     "@tiptap/react": "^2.11.5",
     "@tiptap/starter-kit": "^2.11.5",
     "dictionary-en-ca": "^3.0.0",
+    "double-metaphone": "^2.0.1",
     "idb": "^8.0.4",
     "lucide-react": "^0.475.0",
     "nspell": "^2.1.5",
