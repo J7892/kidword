@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Eye, HelpCircle, Lightbulb, Mic, Sparkles, Volume2, X } from 'lucide-react';
+import {
+  CheckCircle2,
+  Eye,
+  HelpCircle,
+  Lightbulb,
+  Mic,
+  Sparkles,
+  Volume2,
+  X,
+} from 'lucide-react';
 import type { ClickedSpellError } from '../extensions/SpellCheck';
 
 interface SpellingDetectivePopoverProps {
@@ -39,7 +48,52 @@ interface WindowWithSpeechRecognition extends Window {
   webkitSpeechRecognition?: new () => SpeechRecognitionInstanceLike;
 }
 
+type TypedLetterStatus = 'correct' | 'present' | 'absent';
+
 const VOWELS = new Set(['a', 'e', 'i', 'o', 'u', 'y']);
+
+/**
+ * Standard two-pass Wordle evaluation of the child's typed letters against the target word:
+ * - 'correct' (green): exact letter in the exact position
+ * - 'present' (amber/yellow): right letter in the word, wrong position (respecting duplicate counts)
+ * - 'absent' (rose): letter not needed
+ */
+function evaluateTypedLetters(
+  typed: string,
+  target: string
+): Array<{ char: string; status: TypedLetterStatus }> {
+  const typedChars = typed.split('');
+  const targetChars = target.split('');
+  const statuses: TypedLetterStatus[] = new Array(typedChars.length).fill('absent');
+  const remainingCounts = new Map<string, number>();
+
+  for (const ch of targetChars) {
+    const lower = ch.toLowerCase();
+    remainingCounts.set(lower, (remainingCounts.get(lower) ?? 0) + 1);
+  }
+
+  // Pass 1: exact-position green matches
+  for (let i = 0; i < typedChars.length; i++) {
+    if (i < targetChars.length && typedChars[i].toLowerCase() === targetChars[i].toLowerCase()) {
+      statuses[i] = 'correct';
+      const lower = typedChars[i].toLowerCase();
+      remainingCounts.set(lower, (remainingCounts.get(lower) ?? 1) - 1);
+    }
+  }
+
+  // Pass 2: misplaced yellow matches
+  for (let i = 0; i < typedChars.length; i++) {
+    if (statuses[i] === 'correct') continue;
+    const lower = typedChars[i].toLowerCase();
+    const available = remainingCounts.get(lower) ?? 0;
+    if (available > 0) {
+      statuses[i] = 'present';
+      remainingCounts.set(lower, available - 1);
+    }
+  }
+
+  return typedChars.map((char, idx) => ({ char, status: statuses[idx] }));
+}
 
 export function SpellingDetectivePopover({
   error,
@@ -128,7 +182,7 @@ export function SpellingDetectivePopover({
     const handlePointerDown = (e: PointerEvent) => {
       if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
         const targetEl = e.target as HTMLElement | null;
-        // Keep the card open while clicking inside the editor to type the fix
+        // Keep the card open while clicking inside the editor or title to type the fix
         if (!targetEl?.closest?.('.spell-error') && !targetEl?.closest?.('.ProseMirror')) {
           onClose();
         }
@@ -145,14 +199,14 @@ export function SpellingDetectivePopover({
 
   const positionStyle = useMemo(() => {
     if (!error) return {};
-    const cardWidth = 344;
+    const cardWidth = 352;
     const margin = 12;
     const viewportW = typeof window !== 'undefined' ? window.innerWidth : 1024;
     const viewportH = typeof window !== 'undefined' ? window.innerHeight : 768;
 
     const left = Math.max(margin, Math.min(error.rect.left, viewportW - cardWidth - margin));
-    const showAbove = error.rect.bottom + 320 > viewportH && error.rect.top > 320;
-    const top = showAbove ? Math.max(margin, error.rect.top - 310) : error.rect.bottom + 10;
+    const showAbove = error.rect.bottom + 360 > viewportH && error.rect.top > 360;
+    const top = showAbove ? Math.max(margin, error.rect.top - 348) : error.rect.bottom + 10;
 
     return { left: `${left}px`, top: `${top}px`, width: `${cardWidth}px` };
   }, [error]);
@@ -172,6 +226,11 @@ export function SpellingDetectivePopover({
     }, 1400);
     return () => window.clearTimeout(timer);
   }, [isSolved, onClose]);
+
+  const typedTiles = useMemo(() => {
+    if (!target || !typed) return [];
+    return evaluateTypedLetters(typed, target);
+  }, [typed, target]);
 
   const tiles = useMemo(() => {
     if (!target) return [];
@@ -335,19 +394,44 @@ export function SpellingDetectivePopover({
         </button>
       </div>
 
-      {/* Typed word badge */}
-      <p className="mt-2 text-xs font-semibold" style={{ color: 'var(--ink-muted)' }}>
-        You typed:{' '}
-        <span
-          className={`rounded-md px-1.5 py-0.5 font-bold ${
-            isSolved
-              ? 'bg-emerald-100 text-emerald-800'
-              : 'bg-red-100 text-red-800'
-          }`}
-        >
-          {typed || '—'}
-        </span>
-      </p>
+      {/* Wordle-style "You typed" tiles when a target word is active, otherwise badge */}
+      {target && typedTiles.length > 0 ? (
+        <div className="mt-2.5">
+          <p className="mb-1 text-[11px] font-bold" style={{ color: 'var(--ink-muted)' }}>
+            Your letters:
+          </p>
+          <div className="flex flex-wrap items-center gap-1" aria-label={`You typed ${typed}`}>
+            {typedTiles.map((item, idx) => (
+              <span
+                key={idx}
+                title={
+                  item.status === 'correct'
+                    ? 'Right letter, right spot!'
+                    : item.status === 'present'
+                      ? 'In the word, wrong spot!'
+                      : 'Not needed in this word'
+                }
+                className={`inline-flex h-7 min-w-[1.65rem] items-center justify-center rounded-md px-1 text-sm font-bold transition ${
+                  item.status === 'correct'
+                    ? 'border-2 border-emerald-600 bg-emerald-500 text-white'
+                    : item.status === 'present'
+                      ? 'border-2 border-dashed border-amber-500 bg-amber-200 text-amber-950'
+                      : 'border border-rose-300 bg-rose-50 text-rose-800 line-through decoration-rose-400/75'
+                }`}
+              >
+                {item.char}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="mt-2 text-xs font-semibold" style={{ color: 'var(--ink-muted)' }}>
+          You typed:{' '}
+          <span className="rounded-md bg-red-100 px-1.5 py-0.5 font-bold text-red-800">
+            {typed || '—'}
+          </span>
+        </p>
+      )}
 
       {isSolved && (
         <div className="mt-3 rounded-xl border border-emerald-300 bg-emerald-100 px-3 py-2 text-center text-sm font-bold text-emerald-900">
@@ -398,6 +482,9 @@ export function SpellingDetectivePopover({
       ) : target ? (
         /* Normal 3-Step Progressive Hint Card */
         <div className="mt-3">
+          <p className="mb-1 text-[11px] font-bold" style={{ color: 'var(--ink-muted)' }}>
+            Word clue ({target.length} letters):
+          </p>
           <div className="flex flex-wrap items-center gap-1.5" aria-label="Word clue">
             {tiles.map((tile, idx) => (
               <span
@@ -406,8 +493,8 @@ export function SpellingDetectivePopover({
                   tile.isMatched
                     ? 'border-emerald-600 bg-emerald-500 text-white'
                     : tile.isRevealed
-                      ? 'border-blue-400/50 bg-blue-500/10'
-                      : 'border-current/20 bg-transparent'
+                      ? 'border-blue-400/60 bg-blue-500/10'
+                      : 'border-current/25 bg-transparent'
                 }`}
               >
                 {tile.isRevealed ? tile.char : '_'}
@@ -415,7 +502,7 @@ export function SpellingDetectivePopover({
             ))}
           </div>
           <p className="mt-1.5 text-[11px] font-medium" style={{ color: 'var(--ink-muted)' }}>
-            Green letters are in the right spot! Fix it by typing on the page.
+            🟩 Right spot • 🟨 Right letter, wrong spot!
           </p>
         </div>
       ) : (

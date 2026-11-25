@@ -2,10 +2,15 @@ import { Extension } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
-import type { SpellBlockInput, SpellErrorItem } from '../workers/spellcheck.worker';
+import type {
+  SpellBlockInput,
+  SpellErrorItem,
+  SpellTargetSurface,
+} from '../workers/spellcheck.worker';
 
 export interface ClickedSpellError {
   id: number;
+  surface: SpellTargetSurface;
   word: string;
   suggestion: string | null;
   phoneticCandidates: string[];
@@ -17,6 +22,7 @@ export interface ClickedSpellError {
 let clickSeq = 0;
 
 export interface SpellCheckOptions {
+  surface?: SpellTargetSurface;
   onWordClick?: (error: ClickedSpellError) => void;
 }
 
@@ -88,12 +94,14 @@ export const SpellCheck = Extension.create<SpellCheckOptions>({
 
   addOptions() {
     return {
+      surface: 'body',
       onWordClick: undefined,
     };
   },
 
   addProseMirrorPlugins() {
     const onWordClick = this.options.onWordClick;
+    const surface: SpellTargetSurface = this.options.surface ?? 'body';
 
     return [
       new Plugin<DecorationSet>({
@@ -138,6 +146,7 @@ export const SpellCheck = Extension.create<SpellCheckOptions>({
 
             onWordClick({
               id: ++clickSeq,
+              surface,
               word,
               suggestion,
               phoneticCandidates,

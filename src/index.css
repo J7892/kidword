@@ -44,6 +44,25 @@ body {
   transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
 }
 
+/* Tiptap Story Title Surface */
+.kidword-title-editor .ProseMirror {
+  outline: none;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.kidword-title-editor .ProseMirror p {
+  margin: 0;
+}
+
+.kidword-title-editor.is-title-empty .ProseMirror p::before {
+  content: "My Story Title...";
+  opacity: 0.45;
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
 /* Tiptap Editor Surface */
 .kidword-editor .ProseMirror {
   outline: none;
@@ -182,5 +201,13 @@ dialog::backdrop {
   .kidword-editor .ProseMirror {
     min-height: 0 !important;
     color: #000000 !important;
+  }
+
+  .spell-error {
+    text-decoration: none !important;
+  }
+
+  .read-aloud-active {
+    background: transparent !important;
   }
 }

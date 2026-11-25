@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { EditorContent, useEditor } from '@tiptap/react';
+import { EditorContent, useEditor, type Editor } from '@tiptap/react';
+import type { Transaction } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -11,6 +12,7 @@ import { ParentSettingsModal } from './components/ParentSettingsModal';
 import { SpellingDetectivePopover } from './components/SpellingDetectivePopover';
 import { StoriesDrawer } from './components/StoriesDrawer';
 import { StorySparkModal } from './components/StorySparkModal';
+import { StoryTitleEditor } from './components/StoryTitleEditor';
 import { Toolbar, type ReadAloudSpeed, type ReadAloudStatus } from './components/Toolbar';
 import { WhatsAppShareModal } from './components/WhatsAppShareModal';
 import { FONTS, STORY_EMOJIS, type PageTheme } from './constants/editorConfig';
@@ -46,7 +48,11 @@ import {
   type WhatsAppContact,
 } from './utils/parentSettings';
 import { addPersonalWord, getAllowPeek, loadPersonalWords } from './utils/spellSettings';
-import type { SpellWorkerRequest, SpellWorkerResponse } from './workers/spellcheck.worker';
+import type {
+  SpellTargetSurface,
+  SpellWorkerRequest,
+  SpellWorkerResponse,
+} from './workers/spellcheck.worker';
 
 type SaveStatus = 'idle' | 'saving' | 'saved';
 
@@ -98,14 +104,15 @@ export function App() {
   const [wordCount, setWordCount] = useState(0);
   const [isPageEmojiOpen, setIsPageEmojiOpen] = useState(false);
 
-  const titleTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const pageEmojiRef = useRef<HTMLDivElement | null>(null);
-
+  const titleEditorRef = useRef<Editor | null>(null);
   const saveTimerRef = useRef<number | null>(null);
   const spellTimerRef = useRef<number | null>(null);
   const spellWorkerRef = useRef<Worker | null>(null);
   const spellWorkerReadyRef = useRef(false);
-  const spellRequestIdRef = useRef(0);
+  const spellRequestSeqRef = useRef(0);
+  const bodySpellReqIdRef = useRef(0);
+  const titleSpellReqIdRef = useRef(0);
   const phoneticResolversRef = useRef(new Map<number, (candidates: string[]) => void>());
   const activeStoryRef = useRef<StoryRecord | null>(null);
   const skipNextSaveRef = useRef(true);
@@ -163,50 +170,31 @@ export function App() {
   const scheduleSaveRef = useRef<() => void>(() => {});
   const scheduleSpellCheckRef = useRef<() => void>(() => {});
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        codeBlock: false,
-        code: false,
-        horizontalRule: false,
-      }),
-      Underline,
-      TextStyle,
-      Color,
-      FontFamily,
-      FontSize,
-      ReadAloudHighlight,
-      SpellCheck.configure({
-        onWordClick: (err) => {
-          setClickedSpellError(err);
-        },
-      }),
-    ],
-    content: '<p></p>',
-    editorProps: {
-      attributes: {
-        spellcheck: 'false',
-        'aria-label': 'Story writing area',
-      },
-    },
-    onUpdate: ({ editor: currentEditor }) => {
-      setWordCount(countWords(currentEditor.getText()));
-      scheduleSaveRef.current();
-      scheduleSpellCheckRef.current();
-    },
-    onSelectionUpdate: ({ editor: currentEditor }) => {
-      scheduleSpellCheckRef.current();
+  const handleSurfaceSelectionUpdate = useCallback(
+    (surface: SpellTargetSurface, currentEditor: Editor) => {
       const activeErr = clickedSpellErrorRef.current;
       if (!activeErr) return;
+
+      if (activeErr.surface !== surface) {
+        if (currentEditor.isFocused) {
+          setClickedSpellError(null);
+        }
+        return;
+      }
+
       const { from: selFrom, to: selTo } = currentEditor.state.selection;
       if (selFrom !== selTo || selFrom < activeErr.from || selFrom > activeErr.to) {
         setClickedSpellError(null);
       }
     },
-    onTransaction: ({ editor: currentEditor, transaction }) => {
-      if (!transaction.docChanged || !clickedSpellErrorRef.current) return;
+    []
+  );
 
+  const handleSurfaceTransaction = useCallback(
+    (surface: SpellTargetSurface, currentEditor: Editor, transaction: Transaction) => {
       const prev = clickedSpellErrorRef.current;
+      if (!transaction.docChanged || !prev || prev.surface !== surface) return;
+
       const maxPos = transaction.doc.content.size;
       const mappedFrom = Math.max(0, Math.min(transaction.mapping.map(prev.from, -1), maxPos));
 
@@ -220,7 +208,7 @@ export function App() {
       const blockText = $pos.parent.textBetween(0, $pos.parent.content.size, '\n', '\n');
       let relStart = Math.max(0, Math.min(mappedFrom - blockStart, blockText.length));
 
-      // Expand left in case the user inserted/replaced characters before prev.from
+      // Expand left in case characters were inserted/replaced before prev.from
       while (relStart > 0 && WORD_CHAR_REGEX.test(blockText[relStart - 1])) {
         relStart -= 1;
       }
@@ -260,16 +248,72 @@ export function App() {
         });
       });
     },
+    []
+  );
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        codeBlock: false,
+        code: false,
+        horizontalRule: false,
+      }),
+      Underline,
+      TextStyle,
+      Color,
+      FontFamily,
+      FontSize,
+      ReadAloudHighlight,
+      SpellCheck.configure({
+        surface: 'body',
+        onWordClick: (err) => {
+          setClickedSpellError(err);
+        },
+      }),
+    ],
+    content: '<p></p>',
+    editorProps: {
+      attributes: {
+        spellcheck: 'false',
+        'aria-label': 'Story writing area',
+      },
+    },
+    onUpdate: ({ editor: currentEditor }) => {
+      setWordCount(countWords(currentEditor.getText()));
+      scheduleSaveRef.current();
+      scheduleSpellCheckRef.current();
+    },
+    onSelectionUpdate: ({ editor: currentEditor }) => {
+      scheduleSpellCheckRef.current();
+      handleSurfaceSelectionUpdate('body', currentEditor);
+    },
+    onBlur: () => {
+      scheduleSpellCheckRef.current();
+    },
+    onTransaction: ({ editor: currentEditor, transaction }) => {
+      handleSurfaceTransaction('body', currentEditor, transaction);
+    },
   });
 
   const flushPendingSave = useCallback(async () => {
-    if (saveTimerRef.current === null) return;
-    window.clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = null;
+    const hasPendingTimer = saveTimerRef.current !== null;
+    if (hasPendingTimer) {
+      window.clearTimeout(saveTimerRef.current!);
+      saveTimerRef.current = null;
+    }
     const current = activeStoryRef.current;
-    if (!current || !editor) return;
+    if (!current || !editor || editor.isDestroyed) return;
+
     const { title: t, theme: th, defaultFont: df } = latestRef.current;
-    await performSave(current, t, editor.getHTML(), editor.getText(), th, df);
+    const currentHtml = editor.getHTML();
+    const isDirty =
+      hasPendingTimer ||
+      current.title !== t ||
+      current.htmlContent !== currentHtml ||
+      current.fontFamily !== df;
+
+    if (!isDirty) return;
+    await performSave(current, t, currentHtml, editor.getText(), th, df);
   }, [editor, performSave]);
 
   const scheduleSave = useCallback(() => {
@@ -291,7 +335,7 @@ export function App() {
     scheduleSaveRef.current = scheduleSave;
   }, [scheduleSave]);
 
-  // Flush pending save if the tab hides or Chromebook lid closes
+  // Immediately flush save to IndexedDB when the tab hides or Chromebook lid closes
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
@@ -303,23 +347,29 @@ export function App() {
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handlePageHide);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handlePageHide);
     };
   }, [flushPendingSave]);
 
   // Keep Spelling Detective popover anchored to the word when scrolling or resizing
   useEffect(() => {
-    if (!clickedSpellError || !editor) return;
+    if (!clickedSpellError) return;
     const activeId = clickedSpellError.id;
+    const activeSurface = clickedSpellError.surface;
 
     const updateAnchor = () => {
       const curr = clickedSpellErrorRef.current;
-      if (!curr || curr.id !== activeId || editor.isDestroyed) return;
-      const nextRect = computeWordDomRect(editor.view, curr.from, curr.to);
+      const targetEd = activeSurface === 'title' ? titleEditorRef.current : editor;
+      if (!curr || curr.id !== activeId || !targetEd || targetEd.isDestroyed) return;
+      const nextRect = computeWordDomRect(targetEd.view, curr.from, curr.to);
       if (nextRect) {
-        setClickedSpellError((prev) => (prev && prev.id === activeId ? { ...prev, rect: nextRect } : prev));
+        setClickedSpellError((prev) =>
+          prev && prev.id === activeId ? { ...prev, rect: nextRect } : prev
+        );
       }
     };
 
@@ -329,27 +379,45 @@ export function App() {
       window.removeEventListener('scroll', updateAnchor, true);
       window.removeEventListener('resize', updateAnchor);
     };
-  }, [clickedSpellError?.id, editor]);
+  }, [clickedSpellError?.id, clickedSpellError?.surface, editor]);
+
+  const runSpellCheckForSurface = useCallback(
+    (surface: SpellTargetSurface, targetEd: Editor | null) => {
+      const worker = spellWorkerRef.current;
+      if (!worker || !spellWorkerReadyRef.current || !targetEd || targetEd.isDestroyed) return;
+
+      const cursorPos =
+        targetEd.isFocused && targetEd.state.selection.empty
+          ? targetEd.state.selection.from
+          : undefined;
+      const { blocks, cursorBlockPos, cursorOffsetInBlock } = extractSpellBlocks(
+        targetEd.state.doc,
+        cursorPos
+      );
+      const requestId = ++spellRequestSeqRef.current;
+      if (surface === 'title') {
+        titleSpellReqIdRef.current = requestId;
+      } else {
+        bodySpellReqIdRef.current = requestId;
+      }
+
+      const msg: SpellWorkerRequest = {
+        type: 'check',
+        requestId,
+        surface,
+        blocks,
+        cursorBlockPos,
+        cursorOffsetInBlock,
+      };
+      worker.postMessage(msg);
+    },
+    []
+  );
 
   const runSpellCheckNow = useCallback(() => {
-    const worker = spellWorkerRef.current;
-    if (!worker || !spellWorkerReadyRef.current || !editor) return;
-
-    const cursorPos = editor.state.selection.empty ? editor.state.selection.from : undefined;
-    const { blocks, cursorBlockPos, cursorOffsetInBlock } = extractSpellBlocks(
-      editor.state.doc,
-      cursorPos
-    );
-    const requestId = ++spellRequestIdRef.current;
-    const msg: SpellWorkerRequest = {
-      type: 'check',
-      requestId,
-      blocks,
-      cursorBlockPos,
-      cursorOffsetInBlock,
-    };
-    worker.postMessage(msg);
-  }, [editor]);
+    runSpellCheckForSurface('body', editor);
+    runSpellCheckForSurface('title', titleEditorRef.current);
+  }, [editor, runSpellCheckForSurface]);
 
   const scheduleSpellCheck = useCallback(() => {
     if (spellTimerRef.current !== null) {
@@ -381,11 +449,19 @@ export function App() {
         return;
       }
       if (data.type === 'result') {
-        if (data.requestId !== spellRequestIdRef.current) return;
+        if (data.surface === 'title') {
+          if (data.requestId !== titleSpellReqIdRef.current) return;
+          const tEd = titleEditorRef.current;
+          if (!tEd || tEd.isDestroyed) return;
+          const decorations = buildSpellDecorations(tEd.state.doc, data.errors);
+          tEd.view.dispatch(tEd.state.tr.setMeta(spellcheckPluginKey, { decorations }));
+          return;
+        }
+
+        if (data.requestId !== bodySpellReqIdRef.current) return;
+        if (editor.isDestroyed) return;
         const decorations = buildSpellDecorations(editor.state.doc, data.errors);
-        editor.view.dispatch(
-          editor.state.tr.setMeta(spellcheckPluginKey, { decorations })
-        );
+        editor.view.dispatch(editor.state.tr.setMeta(spellcheckPluginKey, { decorations }));
         return;
       }
       if (data.type === 'phonetic-result') {
@@ -478,19 +554,6 @@ export function App() {
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  // Auto-resize Story Title textarea to wrap multi-line titles cleanly
-  useEffect(() => {
-    const el = titleTextareaRef.current;
-    if (!el) return;
-    const resize = () => {
-      el.style.height = 'auto';
-      el.style.height = `${el.scrollHeight}px`;
-    };
-    resize();
-    window.addEventListener('resize', resize);
-    return () => window.removeEventListener('resize', resize);
-  }, [title, defaultFont, isFocusMode]);
-
   // Close inline title emoji picker on outside click or Escape
   useEffect(() => {
     if (!isPageEmojiOpen) return;
@@ -577,8 +640,6 @@ export function App() {
     if (readAloudStatus === 'paused') {
       window.speechSynthesis.resume();
       setReadAloudStatus('playing');
-      // Chrome OS speechSynthesis can drop paused utterances after ~15s;
-      // if resume didn't restart speech, re-speak from the current sentence index.
       window.setTimeout(() => {
         if (
           readActiveSessionRef.current > 0 &&
@@ -720,7 +781,7 @@ export function App() {
       if (!worker || !spellWorkerReadyRef.current) {
         return Promise.resolve([]);
       }
-      const requestId = ++spellRequestIdRef.current;
+      const requestId = ++spellRequestSeqRef.current;
       return new Promise((resolve) => {
         phoneticResolversRef.current.set(requestId, resolve);
         const msg: SpellWorkerRequest = {
@@ -822,6 +883,16 @@ export function App() {
       loadStoryIntoEditor(remaining[0]);
     }
   };
+
+  const handleTitleEditorReady = useCallback(
+    (instance: Editor | null) => {
+      titleEditorRef.current = instance;
+      if (instance) {
+        runSpellCheckForSurface('title', instance);
+      }
+    },
+    [runSpellCheckForSurface]
+  );
 
   const toggleFullscreen = async () => {
     try {
@@ -926,7 +997,7 @@ export function App() {
           style={{ fontFamily: defaultFont }}
           className="paper-surface mx-auto min-h-[78vh] w-full max-w-[780px] cursor-text rounded-2xl px-6 py-8 sm:px-14 sm:py-12"
         >
-          {/* Editable Story Icon + Wrapping Title (screen) */}
+          {/* Editable Story Icon + Auto-Wrapping Spellchecked Story Title (screen) */}
           <div className="no-print mb-6 flex items-start gap-3">
             <div ref={pageEmojiRef} className="relative shrink-0">
               <button
@@ -971,22 +1042,15 @@ export function App() {
               )}
             </div>
 
-            <textarea
-              ref={titleTextareaRef}
-              rows={1}
+            <StoryTitleEditor
               value={title}
-              onChange={(e) => setTitle(e.target.value.replace(/[\r\n]+/g, ' '))}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  editor?.commands.focus('start');
-                }
-              }}
-              placeholder="My Story Title..."
-              spellCheck={false}
-              aria-label="Story Title"
-              style={{ color: 'var(--ink)' }}
-              className="w-full resize-none overflow-hidden border-b border-transparent bg-transparent pb-2 text-2xl leading-tight font-bold tracking-tight placeholder:opacity-45 focus:border-current/15 focus:outline-none sm:text-3xl"
+              onChange={setTitle}
+              onFocusBody={() => editor?.commands.focus('start')}
+              onWordClick={setClickedSpellError}
+              onScheduleSpellCheck={scheduleSpellCheck}
+              onTitleSelectionUpdate={(ed) => handleSurfaceSelectionUpdate('title', ed)}
+              onTitleTransaction={(ed, tr) => handleSurfaceTransaction('title', ed, tr)}
+              onEditorReady={handleTitleEditorReady}
             />
           </div>
 
