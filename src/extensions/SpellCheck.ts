@@ -5,6 +5,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { SpellBlockInput, SpellErrorItem } from '../workers/spellcheck.worker';
 
 export interface ClickedSpellError {
+  id: number;
   word: string;
   suggestion: string | null;
   phoneticCandidates: string[];
@@ -12,6 +13,8 @@ export interface ClickedSpellError {
   to: number;
   rect: DOMRect;
 }
+
+let clickSeq = 0;
 
 export interface SpellCheckOptions {
   onWordClick?: (error: ClickedSpellError) => void;
@@ -134,6 +137,7 @@ export const SpellCheck = Extension.create<SpellCheckOptions>({
             if (!word) return false;
 
             onWordClick({
+              id: ++clickSeq,
               word,
               suggestion,
               phoneticCandidates,

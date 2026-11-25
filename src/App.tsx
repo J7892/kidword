@@ -80,6 +80,11 @@ export function App() {
   const readSentencesRef = useRef<SpokenSentence[]>([]);
   const readIndexRef = useRef(0);
   const readActiveSessionRef = useRef(0);
+  const clickedSpellErrorRef = useRef<ClickedSpellError | null>(null);
+
+  useEffect(() => {
+    clickedSpellErrorRef.current = clickedSpellError;
+  }, [clickedSpellError]);
 
   useEffect(() => {
     activeStoryRef.current = activeStory;
@@ -150,6 +155,24 @@ export function App() {
     },
     onSelectionUpdate: () => {
       scheduleSpellCheckRef.current();
+    },
+    onTransaction: ({ transaction }) => {
+      if (!transaction.docChanged || !clickedSpellErrorRef.current) return;
+      setClickedSpellError((prev) => {
+        if (!prev) return null;
+        const maxPos = transaction.doc.content.size;
+        const from = Math.max(0, Math.min(transaction.mapping.map(prev.from, -1), maxPos));
+        const mappedTo = Math.max(from, Math.min(transaction.mapping.map(prev.to, 1), maxPos));
+        const raw = transaction.doc.textBetween(from, mappedTo, '\n', '\n');
+        const match = raw.match(/^[A-Za-zÀ-ÖØ-öø-ÿ'’]+/);
+        const nextWord = match ? match[0] : '';
+        return {
+          ...prev,
+          from,
+          to: from + nextWord.length,
+          word: nextWord,
+        };
+      });
     },
   });
 

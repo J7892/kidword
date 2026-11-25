@@ -75,7 +75,7 @@ export function SpellingDetectivePopover({
     };
   }, []);
 
-  // Reset hint state whenever a different word is clicked
+  // Reset hint state only when a different misspelled word is clicked (by id)
   useEffect(() => {
     recognitionRef.current?.stop();
     recognitionRef.current = null;
@@ -99,7 +99,8 @@ export function SpellingDetectivePopover({
       setLockedTarget(error.suggestion ?? error.phoneticCandidates[0] ?? null);
       setAudioCandidates([]);
     }
-  }, [error]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error?.id]);
 
   // Handle 3-second peek countdown
   useEffect(() => {
@@ -125,8 +126,9 @@ export function SpellingDetectivePopover({
     };
     const handlePointerDown = (e: PointerEvent) => {
       if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
-        const target = e.target as HTMLElement | null;
-        if (!target?.closest?.('.spell-error')) {
+        const targetEl = e.target as HTMLElement | null;
+        // Keep the card open while clicking inside the editor to type the fix
+        if (!targetEl?.closest?.('.spell-error') && !targetEl?.closest?.('.ProseMirror')) {
           onClose();
         }
       }
@@ -157,6 +159,18 @@ export function SpellingDetectivePopover({
   const typed = error?.word ?? '';
   const target = lockedTarget;
   const isPeeking = peekSecondsLeft !== null && peekSecondsLeft > 0;
+  const isSolved = Boolean(
+    target && typed.trim().length > 0 && typed.trim().toLowerCase() === target.toLowerCase()
+  );
+
+  // Auto-close briefly after the child finishes spelling the word right
+  useEffect(() => {
+    if (!isSolved) return;
+    const timer = window.setTimeout(() => {
+      onClose();
+    }, 1400);
+    return () => window.clearTimeout(timer);
+  }, [isSolved, onClose]);
 
   const tiles = useMemo(() => {
     if (!target) return [];
@@ -322,10 +336,22 @@ export function SpellingDetectivePopover({
       {/* Typed word badge */}
       <p className="mt-2 text-xs font-semibold" style={{ color: 'var(--ink-muted)' }}>
         You typed:{' '}
-        <span className="rounded-md bg-red-100 px-1.5 py-0.5 font-bold text-red-800 dark:bg-red-950/60 dark:text-red-200">
-          {typed}
+        <span
+          className={`rounded-md px-1.5 py-0.5 font-bold ${
+            isSolved
+              ? 'bg-emerald-100 text-emerald-800'
+              : 'bg-red-100 text-red-800'
+          }`}
+        >
+          {typed || '—'}
         </span>
       </p>
+
+      {isSolved && (
+        <div className="mt-3 rounded-xl border border-emerald-300 bg-emerald-100 px-3 py-2 text-center text-sm font-bold text-emerald-900">
+          🎉 Awesome! You spelled it right!
+        </div>
+      )}
 
       {/* Audio-Only Word Picker (2-3 phonetic candidates) */}
       {isAudioPickerActive ? (
