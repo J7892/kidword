@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2,
   Eye,
@@ -374,19 +374,65 @@ export function SpellingDetectivePopover({
     };
   }, [error, onClose]);
 
-  const positionStyle = useMemo(() => {
-    if (!error) return {};
-    const cardWidth = 368;
-    const margin = 12;
-    const viewportW = typeof window !== 'undefined' ? window.innerWidth : 1024;
-    const viewportH = typeof window !== 'undefined' ? window.innerHeight : 768;
+  const [coords, setCoords] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    maxHeight: number;
+  }>({ left: 12, top: 12, width: 368, maxHeight: 600 });
 
-    const left = Math.max(margin, Math.min(error.rect.left, viewportW - cardWidth - margin));
-    const showAbove = error.rect.bottom + 380 > viewportH && error.rect.top > 380;
-    const top = showAbove ? Math.max(margin, error.rect.top - 368) : error.rect.bottom + 10;
+  useLayoutEffect(() => {
+    if (!error) return;
 
-    return { left: `${left}px`, top: `${top}px`, width: `${cardWidth}px` };
-  }, [error]);
+    const updatePosition = () => {
+      const margin = 12;
+      const gap = 8;
+      const viewportW = window.innerWidth;
+      const viewportH = window.innerHeight;
+      const width = Math.min(368, Math.max(260, viewportW - margin * 2));
+      const maxHeight = Math.max(240, viewportH - margin * 2);
+
+      const el = cardRef.current;
+      const measuredH = el ? Math.min(el.scrollHeight, maxHeight) : Math.min(440, maxHeight);
+
+      const left = Math.max(margin, Math.min(error.rect.left, viewportW - width - margin));
+      const spaceBelow = viewportH - error.rect.bottom - margin - gap;
+      const spaceAbove = error.rect.top - margin - gap;
+
+      let top: number;
+      if (measuredH <= spaceBelow) {
+        top = error.rect.bottom + gap;
+      } else if (measuredH <= spaceAbove) {
+        top = error.rect.top - measuredH - gap;
+      } else {
+        // Not enough room strictly below or above: clamp within the viewport
+        const preferredTop =
+          spaceAbove > spaceBelow
+            ? error.rect.top - measuredH - gap
+            : error.rect.bottom + gap;
+        top = Math.max(margin, Math.min(preferredTop, viewportH - measuredH - margin));
+      }
+
+      setCoords({ left, top, width, maxHeight });
+    };
+
+    updatePosition();
+
+    const el = cardRef.current;
+    const ro =
+      el && typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => updatePosition())
+        : null;
+    if (el && ro) {
+      ro.observe(el);
+    }
+
+    window.addEventListener('resize', updatePosition);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [error, lockedTarget, audioCandidates.length, showNotRightMenu, isSolved, feedbackMsg]);
 
   const typed = error?.word ?? '';
   const target = lockedTarget;
@@ -698,7 +744,11 @@ export function SpellingDetectivePopover({
       role="dialog"
       aria-label="Spelling Detective word workbench"
       style={{
-        ...positionStyle,
+        left: `${coords.left}px`,
+        top: `${coords.top}px`,
+        width: `${coords.width}px`,
+        maxHeight: `${coords.maxHeight}px`,
+        overflowY: 'auto',
         backgroundColor: 'var(--page-bg)',
         borderColor: 'var(--toolbar-border)',
         color: 'var(--ink)',
