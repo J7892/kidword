@@ -6,7 +6,7 @@ import Underline from '@tiptap/extension-underline';
 import TextStyle from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import FontFamily from '@tiptap/extension-font-family';
-import { Check, ChevronDown, ChevronUp, Eye, Sparkles, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Eye, Settings, Sparkles, X } from 'lucide-react';
 import { ParentSettingsModal } from './components/ParentSettingsModal';
 import { SpellingDetectivePopover } from './components/SpellingDetectivePopover';
 import { StoriesDrawer } from './components/StoriesDrawer';
@@ -866,7 +866,7 @@ export function App() {
           borderColor: 'var(--toolbar-border)',
           color: 'var(--ink-muted)',
         }}
-        className="no-print pointer-events-none fixed right-4 bottom-4 z-20 flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold shadow-sm backdrop-blur-sm"
+        className="no-print fixed right-4 bottom-4 z-20 flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold shadow-sm backdrop-blur-sm"
       >
         <span>
           {wordCount >= 100 ? '🏆 ' : wordCount >= 50 ? '✨ ' : ''}
@@ -883,6 +883,16 @@ export function App() {
             </span>
           </>
         )}
+        <span aria-hidden="true">•</span>
+        <button
+          type="button"
+          onClick={() => void handleOpenParentSettings()}
+          aria-label="Parent Settings"
+          title="Parent Settings"
+          className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full opacity-70 transition hover:bg-black/10 hover:opacity-100"
+        >
+          <Settings className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
       </div>
 
       {/* Slide-over My Stories Drawer */}
