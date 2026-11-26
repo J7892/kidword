@@ -12,8 +12,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
-        name: 'KidWord — Story Writer',
-        short_name: 'KidWord',
+        name: 'Story Writer',
+        short_name: 'Story Writer',
         description: 'A distraction-free story writing app for kids.',
         theme_color: '#FBF7EE',
         background_color: '#F3EDE0',
