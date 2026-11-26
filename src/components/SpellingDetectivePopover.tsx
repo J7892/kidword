@@ -388,7 +388,9 @@ export function SpellingDetectivePopover({
       const gap = 8;
       const viewportW = window.innerWidth;
       const viewportH = window.innerHeight;
-      const width = Math.min(368, Math.max(260, viewportW - margin * 2));
+      const maxLen = Math.max(lockedTarget?.length ?? 0, error.word.length);
+      const neededWidth = maxLen > 0 ? maxLen * 42 + 36 : 368;
+      const width = Math.min(viewportW - margin * 2, Math.max(368, neededWidth));
       const maxHeight = Math.max(240, viewportH - margin * 2);
 
       const el = cardRef.current;
@@ -779,7 +781,7 @@ export function SpellingDetectivePopover({
           <p className="mb-1 text-[11px] font-bold" style={{ color: 'var(--ink-muted)' }}>
             You wrote:
           </p>
-          <div className="flex flex-wrap items-center gap-1" aria-label={`You wrote ${typed}`}>
+          <div className="flex flex-nowrap items-center gap-1 overflow-x-auto pb-0.5" aria-label={`You wrote ${typed}`}>
             {typedTiles.map((item, idx) => (
               <span
                 key={idx}
@@ -871,7 +873,7 @@ export function SpellingDetectivePopover({
           </div>
 
           <div
-            className={`flex flex-wrap items-center gap-1.5 ${
+            className={`flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5 ${
               isShaking ? 'animate-gentle-shake' : ''
             }`}
             role="group"
@@ -883,7 +885,7 @@ export function SpellingDetectivePopover({
                   <span
                     key={idx}
                     aria-label={`Letter ${idx + 1}: ${slot.value} (locked)`}
-                    className="inline-flex h-10 w-9 items-center justify-center rounded-xl border-2 border-emerald-600 bg-emerald-500 text-lg font-bold text-white shadow-xs select-none"
+                    className="inline-flex h-10 w-9 shrink-0 items-center justify-center rounded-xl border-2 border-emerald-600 bg-emerald-500 text-lg font-bold text-white shadow-xs select-none"
                   >
                     {slot.value}
                   </span>
@@ -898,7 +900,7 @@ export function SpellingDetectivePopover({
                     : 'border-blue-400 bg-white text-slate-900 focus:border-blue-600 focus:ring-2 focus:ring-blue-500/30';
 
               return (
-                <div key={idx} className="relative">
+                <div key={idx} className="relative shrink-0">
                   <input
                     ref={(el) => {
                       slotRefs.current[idx] = el;
