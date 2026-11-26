@@ -10,6 +10,7 @@ import {
   X,
 } from 'lucide-react';
 import type { ClickedSpellError } from '../extensions/SpellCheck';
+import { speakWordNaturally } from '../utils/speechVoice';
 
 interface SpellingDetectivePopoverProps {
   error: ClickedSpellError | null;
@@ -664,13 +665,7 @@ export function SpellingDetectivePopover({
   const canUseVoice = Boolean(SpeechRecognitionCtor) && isOnline;
 
   const speakWord = (wordToSpeak: string, refocusBoxes = false) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(wordToSpeak);
-    utterance.lang = 'en-CA';
-    utterance.rate = 0.9;
-    utteranceRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
+    utteranceRef.current = speakWordNaturally(wordToSpeak);
     if (refocusBoxes) {
       focusFirstEmptySlot(slots);
     }
