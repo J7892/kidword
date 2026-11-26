@@ -44,7 +44,7 @@ const PLACES = [
   'in an underwater castle',
   'at a midnight bakery',
   'on a Mars playground',
-  'in a cosy log cabin',
+  'in a cozy log cabin',
   'at a glowing ice rink',
   'inside a dinosaur museum',
   'on a runaway school bus',
