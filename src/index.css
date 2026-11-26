@@ -235,10 +235,6 @@ dialog::backdrop {
     text-decoration: none !important;
   }
 
-  .read-aloud-active {
-    background: transparent !important;
-  }
-
   .kidword-editor.is-body-empty .ProseMirror p:first-child::before {
     display: none;
   }

@@ -4,29 +4,23 @@ import {
   Bold,
   BookOpen,
   Check,
+  ChevronDown,
   EyeOff,
   Italic,
   Maximize2,
   Minimize2,
-  Pause,
-  Play,
   Plus,
   Redo2,
   Share2,
-  Square,
+  Type,
   Underline as UnderlineIcon,
   Undo2,
-  Volume2,
 } from 'lucide-react';
 import {
-  COLOR_SWATCHES,
   EXTENDED_COLOR_GRID,
   FONTS,
   TEXT_SIZES,
 } from '../constants/editorConfig';
-
-export type ReadAloudStatus = 'idle' | 'playing' | 'paused';
-export type ReadAloudSpeed = 'slow' | 'normal';
 
 const RAINBOW_WHEEL_BG =
   'conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7, #ec4899, #ef4444)';
@@ -65,11 +59,6 @@ interface ToolbarProps {
   onDefaultFontChange: (font: string) => void;
   onOpenStories: () => void;
   onCreateStory: () => void;
-  readAloudStatus: ReadAloudStatus;
-  readAloudSpeed: ReadAloudSpeed;
-  onReadPlayPause: () => void;
-  onReadStop: () => void;
-  onToggleReadSpeed: () => void;
   onOpenStorySpark: () => void;
   onOpenShare: () => void;
   onEnableFocusMode: () => void;
@@ -83,42 +72,47 @@ export function Toolbar({
   onDefaultFontChange,
   onOpenStories,
   onCreateStory,
-  readAloudStatus,
-  readAloudSpeed,
-  onReadPlayPause,
-  onReadStop,
-  onToggleReadSpeed,
   onOpenStorySpark,
   onOpenShare,
   onEnableFocusMode,
   isFullscreen,
   onToggleFullscreen,
 }: ToolbarProps) {
+  const [isFormatOpen, setIsFormatOpen] = useState(false);
   const [isColorGridOpen, setIsColorGridOpen] = useState(false);
   const [hoveredColorName, setHoveredColorName] = useState<string | null>(null);
+  const formatMenuRef = useRef<HTMLDivElement | null>(null);
   const colorGridRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!isColorGridOpen) return;
+    if (!isFormatOpen && !isColorGridOpen) return;
+
     const handlePointerDown = (e: PointerEvent) => {
-      if (colorGridRef.current && !colorGridRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (isFormatOpen && formatMenuRef.current && !formatMenuRef.current.contains(target)) {
+        setIsFormatOpen(false);
+      }
+      if (isColorGridOpen && colorGridRef.current && !colorGridRef.current.contains(target)) {
         setIsColorGridOpen(false);
         setHoveredColorName(null);
       }
     };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        setIsFormatOpen(false);
         setIsColorGridOpen(false);
         setHoveredColorName(null);
       }
     };
+
     document.addEventListener('pointerdown', handlePointerDown);
     document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isColorGridOpen]);
+  }, [isFormatOpen, isColorGridOpen]);
 
   if (!editor) {
     return null;
@@ -129,15 +123,19 @@ export function Toolbar({
   const activeColor = rawActiveColor ? normalizeToHex(rawActiveColor) || rawActiveColor : '';
   const activeFontSize = (textStyleAttrs.fontSize as string | undefined) ?? '';
   const activeFontFamily = (textStyleAttrs.fontFamily as string | undefined) || defaultFont;
-  const isCustomColorActive =
-    activeColor !== '' &&
-    !COLOR_SWATCHES.some((s) => s.value !== '' && s.value.toLowerCase() === activeColor.toLowerCase());
+  const hasCustomColor = activeColor !== '';
   const activeSwatchLabel =
     EXTENDED_COLOR_GRID.find((s) =>
       s.value === ''
         ? activeColor === ''
         : s.value.toLowerCase() === activeColor.toLowerCase()
     )?.name ?? 'Pick a colour';
+
+  const hasActiveFormat =
+    editor.isActive('bold') ||
+    editor.isActive('italic') ||
+    editor.isActive('underline') ||
+    activeFontSize !== '';
 
   const handleFontChange = (fontValue: string) => {
     const { empty } = editor.state.selection;
@@ -178,9 +176,9 @@ export function Toolbar({
       <div
         role="toolbar"
         aria-label="Writing tools"
-        className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-3 py-2.5 sm:px-5"
+        className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-3 py-2.5 sm:px-5"
       >
-        {/* Left & Center Formatting Groups */}
+        {/* Left Group: Stories, Undo/Redo, Collapsed Format & Colour */}
         <div className="flex flex-wrap items-center gap-2">
           {/* My Stories Drawer & New Story Buttons */}
           <div className="flex items-center gap-1.5">
@@ -236,302 +234,275 @@ export function Toolbar({
 
           <Divider />
 
-          {/* Font Family Selector */}
-          <label className="sr-only" htmlFor="font-family-select">
-            Font style
-          </label>
-          <select
-            id="font-family-select"
-            value={activeFontFamily}
-            onChange={(e) => handleFontChange(e.target.value)}
-            style={{
-              fontFamily: activeFontFamily,
-              backgroundColor: 'var(--control-bg)',
-              color: 'var(--ink)',
-            }}
-            className="h-10 cursor-pointer rounded-xl border border-transparent px-3 text-sm font-semibold transition hover:opacity-90"
-            title="Choose a font"
-          >
-            {FONTS.map((font) => (
-              <option key={font.label} value={font.value} style={{ fontFamily: font.value }}>
-                {font.label}
-              </option>
-            ))}
-          </select>
-
-          <Divider />
-
-          {/* Text Size Presets */}
-          <div className="flex items-center gap-1 rounded-xl p-1" style={{ backgroundColor: 'var(--control-bg)' }}>
-            {TEXT_SIZES.map((size) => {
-              const isActive = activeFontSize === size.value;
-              return (
-                <button
-                  key={size.id}
-                  type="button"
-                  onClick={() => handleSizeChange(size.value)}
-                  aria-pressed={isActive}
-                  title={`Text size: ${size.label}`}
-                  style={
-                    isActive
-                      ? { backgroundColor: 'var(--control-active-bg)', color: 'var(--control-active-text)' }
-                      : { color: 'var(--ink)' }
-                  }
-                  className="h-8 cursor-pointer rounded-lg px-2.5 text-sm font-semibold transition hover:opacity-90"
-                >
-                  {size.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <Divider />
-
-          {/* Bold, Italic, Underline */}
-          <div className="flex items-center gap-1">
-            <ToolButton
-              label="Bold"
-              active={editor.isActive('bold')}
-              onClick={() => editor.chain().focus().toggleBold().run()}
+          {/* Single Formatting Popover Button (Font, Size, Bold/Italic/Underline) */}
+          <div ref={formatMenuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setIsFormatOpen((prev) => !prev);
+                setIsColorGridOpen(false);
+              }}
+              aria-expanded={isFormatOpen}
+              title="Text formatting (font, size, bold, italic, underline)"
+              style={
+                isFormatOpen || hasActiveFormat
+                  ? { backgroundColor: 'var(--control-active-bg)', color: 'var(--control-active-text)' }
+                  : { backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }
+              }
+              className="flex h-10 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition hover:opacity-90"
             >
-              <Bold className="h-4 w-4 stroke-[2.5]" aria-hidden="true" />
-            </ToolButton>
-            <ToolButton
-              label="Italic"
-              active={editor.isActive('italic')}
-              onClick={() => editor.chain().focus().toggleItalic().run()}
-            >
-              <Italic className="h-4 w-4 stroke-[2.5]" aria-hidden="true" />
-            </ToolButton>
-            <ToolButton
-              label="Underline"
-              active={editor.isActive('underline')}
-              onClick={() => editor.chain().focus().toggleUnderline().run()}
-            >
-              <UnderlineIcon className="h-4 w-4 stroke-[2.5]" aria-hidden="true" />
-            </ToolButton>
-          </div>
+              <Type className="h-4 w-4" aria-hidden="true" />
+              <span>Format</span>
+              <ChevronDown
+                className={`h-3.5 w-3.5 transition-transform ${isFormatOpen ? 'rotate-180' : ''}`}
+                aria-hidden="true"
+              />
+            </button>
 
-          <Divider />
-
-          {/* 8 High-Contrast Color Swatches + Custom Color Picker */}
-          <div className="flex items-center gap-1.5" role="group" aria-label="Text colors">
-            {COLOR_SWATCHES.map((swatch) => {
-              const isActive =
-                swatch.value === ''
-                  ? activeColor === ''
-                  : activeColor.toLowerCase() === swatch.value.toLowerCase();
-
-              return (
-                <button
-                  key={swatch.name}
-                  type="button"
-                  onClick={() => handleColorChange(swatch.value)}
-                  aria-label={swatch.name}
-                  aria-pressed={isActive}
-                  title={swatch.name}
-                  style={{ backgroundColor: swatch.preview }}
-                  className={`color-swatch flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-2 transition-transform hover:scale-110 ${
-                    isActive
-                      ? 'scale-110 border-white ring-2 ring-blue-500'
-                      : 'border-black/20'
-                  }`}
-                >
-                  {isActive && <Check className="h-3.5 w-3.5 text-white stroke-[3]" aria-hidden="true" />}
-                </button>
-              );
-            })}
-
-            {/* More Colours Crayon Grid Popover */}
-            <div ref={colorGridRef} className="relative">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsColorGridOpen((prev) => !prev);
-                  setHoveredColorName(null);
+            {isFormatOpen && (
+              <div
+                role="dialog"
+                aria-label="Text formatting options"
+                style={{
+                  backgroundColor: 'var(--page-bg)',
+                  borderColor: 'var(--toolbar-border)',
+                  color: 'var(--ink)',
                 }}
-                aria-label="More colours"
-                aria-expanded={isColorGridOpen}
-                title="More colours"
-                style={
-                  isCustomColorActive
-                    ? { backgroundColor: activeColor }
-                    : { backgroundImage: RAINBOW_WHEEL_BG }
-                }
-                className={`color-swatch relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-2 transition-transform hover:scale-110 ${
-                  isCustomColorActive || isColorGridOpen
-                    ? 'scale-110 border-white ring-2 ring-blue-500'
-                    : 'border-black/20'
-                }`}
+                className="absolute top-12 left-0 z-50 w-72 space-y-3.5 rounded-2xl border-2 p-4 shadow-2xl"
               >
-                {isCustomColorActive ? (
-                  <Check
-                    className={`pointer-events-none h-3.5 w-3.5 stroke-[3] ${
-                      isLightHex(activeColor) ? 'text-slate-900' : 'text-white'
-                    }`}
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <span
-                    className="pointer-events-none h-2.5 w-2.5 rounded-full bg-white/90 shadow-xs"
-                    aria-hidden="true"
-                  />
-                )}
-              </button>
+                {/* Font Family */}
+                <div>
+                  <label
+                    htmlFor="font-family-select"
+                    className="mb-1.5 block text-xs font-bold uppercase tracking-wide"
+                    style={{ color: 'var(--ink-muted)' }}
+                  >
+                    Font
+                  </label>
+                  <select
+                    id="font-family-select"
+                    value={activeFontFamily}
+                    onChange={(e) => handleFontChange(e.target.value)}
+                    style={{
+                      fontFamily: activeFontFamily,
+                      backgroundColor: 'var(--control-bg)',
+                      color: 'var(--ink)',
+                    }}
+                    className="h-10 w-full cursor-pointer rounded-xl border border-transparent px-3 text-sm font-semibold transition hover:opacity-90"
+                  >
+                    {FONTS.map((font) => (
+                      <option key={font.label} value={font.value} style={{ fontFamily: font.value }}>
+                        {font.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              {isColorGridOpen && (
-                <div
-                  role="dialog"
-                  aria-label="Choose a text colour"
-                  style={{
-                    backgroundColor: 'var(--page-bg)',
-                    borderColor: 'var(--toolbar-border)',
-                    color: 'var(--ink)',
-                  }}
-                  className="absolute top-10 left-1/2 z-50 w-76 -translate-x-1/2 rounded-2xl border-2 p-3.5 shadow-2xl sm:left-auto sm:right-0 sm:translate-x-0"
-                >
-                  <div className="mb-2.5 flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold">
-                      🎨 {hoveredColorName || activeSwatchLabel}
-                    </span>
-                    <span
-                      className="text-[11px] font-semibold"
-                      style={{ color: 'var(--ink-muted)' }}
-                    >
-                      32 colours
-                    </span>
+                {/* Text Size */}
+                <div>
+                  <div
+                    className="mb-1.5 text-xs font-bold uppercase tracking-wide"
+                    style={{ color: 'var(--ink-muted)' }}
+                  >
+                    Size
                   </div>
-
-                  <div className="grid grid-cols-8 gap-2">
-                    {EXTENDED_COLOR_GRID.map((swatch) => {
-                      const isActive =
-                        swatch.value === ''
-                          ? activeColor === ''
-                          : activeColor.toLowerCase() === swatch.value.toLowerCase();
-
+                  <div
+                    className="grid grid-cols-3 gap-1 rounded-xl p-1"
+                    style={{ backgroundColor: 'var(--control-bg)' }}
+                  >
+                    {TEXT_SIZES.map((size) => {
+                      const isActive = activeFontSize === size.value;
                       return (
                         <button
-                          key={swatch.name}
+                          key={size.id}
                           type="button"
-                          onClick={() => {
-                            handleColorChange(swatch.value);
-                            setIsColorGridOpen(false);
-                            setHoveredColorName(null);
-                          }}
-                          onMouseEnter={() => setHoveredColorName(swatch.name)}
-                          onMouseLeave={() => setHoveredColorName(null)}
-                          onFocus={() => setHoveredColorName(swatch.name)}
-                          aria-label={swatch.name}
+                          onClick={() => handleSizeChange(size.value)}
                           aria-pressed={isActive}
-                          title={swatch.name}
-                          style={{ backgroundColor: swatch.preview }}
-                          className={`color-swatch flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-2 transition-transform hover:scale-115 ${
+                          style={
                             isActive
-                              ? 'scale-110 border-white ring-2 ring-blue-500'
-                              : 'border-black/15'
-                          }`}
+                              ? {
+                                  backgroundColor: 'var(--control-active-bg)',
+                                  color: 'var(--control-active-text)',
+                                }
+                              : { color: 'var(--ink)' }
+                          }
+                          className="h-9 cursor-pointer rounded-lg text-sm font-semibold transition hover:opacity-90"
                         >
-                          {isActive && (
-                            <Check
-                              className={`h-3.5 w-3.5 stroke-[3] ${
-                                isLightHex(swatch.preview) ? 'text-slate-900' : 'text-white'
-                              }`}
-                              aria-hidden="true"
-                            />
-                          )}
+                          {size.label}
                         </button>
                       );
                     })}
                   </div>
                 </div>
-              )}
-            </div>
+
+                {/* Bold, Italic, Underline */}
+                <div>
+                  <div
+                    className="mb-1.5 text-xs font-bold uppercase tracking-wide"
+                    style={{ color: 'var(--ink-muted)' }}
+                  >
+                    Style
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <ToolButton
+                      label="Bold"
+                      active={editor.isActive('bold')}
+                      onClick={() => editor.chain().focus().toggleBold().run()}
+                      wide
+                    >
+                      <Bold className="h-4 w-4 stroke-[2.5]" aria-hidden="true" />
+                      <span className="text-xs font-bold">Bold</span>
+                    </ToolButton>
+                    <ToolButton
+                      label="Italic"
+                      active={editor.isActive('italic')}
+                      onClick={() => editor.chain().focus().toggleItalic().run()}
+                      wide
+                    >
+                      <Italic className="h-4 w-4 stroke-[2.5]" aria-hidden="true" />
+                      <span className="text-xs font-bold">Italic</span>
+                    </ToolButton>
+                    <ToolButton
+                      label="Underline"
+                      active={editor.isActive('underline')}
+                      onClick={() => editor.chain().focus().toggleUnderline().run()}
+                      wide
+                    >
+                      <UnderlineIcon className="h-4 w-4 stroke-[2.5]" aria-hidden="true" />
+                      <span className="text-xs font-bold">Line</span>
+                    </ToolButton>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Expanding Colour Palette Picker */}
+          <div ref={colorGridRef} className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setIsColorGridOpen((prev) => !prev);
+                setIsFormatOpen(false);
+                setHoveredColorName(null);
+              }}
+              aria-label="Text colour"
+              aria-expanded={isColorGridOpen}
+              title={`Text colour (${activeSwatchLabel})`}
+              style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
+              className="flex h-10 cursor-pointer items-center gap-2 rounded-xl px-3 text-sm font-semibold transition hover:opacity-90"
+            >
+              <span
+                style={
+                  hasCustomColor
+                    ? { backgroundColor: activeColor }
+                    : { backgroundImage: RAINBOW_WHEEL_BG }
+                }
+                className="color-swatch flex h-5 w-5 items-center justify-center rounded-full border border-black/20"
+                aria-hidden="true"
+              >
+                {hasCustomColor && (
+                  <Check
+                    className={`h-3 w-3 stroke-[3] ${
+                      isLightHex(activeColor) ? 'text-slate-900' : 'text-white'
+                    }`}
+                  />
+                )}
+              </span>
+              <span className="hidden sm:inline">Colour</span>
+            </button>
+
+            {isColorGridOpen && (
+              <div
+                role="dialog"
+                aria-label="Choose a text colour"
+                style={{
+                  backgroundColor: 'var(--page-bg)',
+                  borderColor: 'var(--toolbar-border)',
+                  color: 'var(--ink)',
+                }}
+                className="absolute top-12 left-0 z-50 w-76 rounded-2xl border-2 p-3.5 shadow-2xl"
+              >
+                <div className="mb-2.5 flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold">
+                    🎨 {hoveredColorName || activeSwatchLabel}
+                  </span>
+                  <span
+                    className="text-[11px] font-semibold"
+                    style={{ color: 'var(--ink-muted)' }}
+                  >
+                    32 colours
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-8 gap-2">
+                  {EXTENDED_COLOR_GRID.map((swatch) => {
+                    const isActive =
+                      swatch.value === ''
+                        ? activeColor === ''
+                        : activeColor.toLowerCase() === swatch.value.toLowerCase();
+
+                    return (
+                      <button
+                        key={swatch.name}
+                        type="button"
+                        onClick={() => {
+                          handleColorChange(swatch.value);
+                          setIsColorGridOpen(false);
+                          setHoveredColorName(null);
+                        }}
+                        onMouseEnter={() => setHoveredColorName(swatch.name)}
+                        onMouseLeave={() => setHoveredColorName(null)}
+                        onFocus={() => setHoveredColorName(swatch.name)}
+                        aria-label={swatch.name}
+                        aria-pressed={isActive}
+                        title={swatch.name}
+                        style={{ backgroundColor: swatch.preview }}
+                        className={`color-swatch flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-2 transition-transform hover:scale-115 ${
+                          isActive
+                            ? 'scale-110 border-white ring-2 ring-blue-500'
+                            : 'border-black/15'
+                        }`}
+                      >
+                        {isActive && (
+                          <Check
+                            className={`h-3.5 w-3.5 stroke-[3] ${
+                              isLightHex(swatch.preview) ? 'text-slate-900' : 'text-white'
+                            }`}
+                            aria-hidden="true"
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Right Group: Read, Spark, Share, Focus & Fullscreen */}
+        {/* Right Group: Spark, Share, Focus & Fullscreen */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Read My Story & Story Spark Dice */}
-          <div className="flex items-center gap-1.5">
-            {readAloudStatus === 'idle' ? (
-              <button
-                type="button"
-                onClick={onReadPlayPause}
-                title="Read My Story aloud"
-                style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
-                className="flex h-10 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition hover:opacity-90"
-              >
-                <Volume2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />
-                <span className="hidden md:inline">Read My Story</span>
-              </button>
-            ) : (
-              <div
-                className="flex items-center gap-1 rounded-xl p-1"
-                style={{ backgroundColor: 'var(--control-bg)' }}
-                role="group"
-                aria-label="Read aloud controls"
-              >
-                <button
-                  type="button"
-                  onClick={onReadPlayPause}
-                  aria-label={readAloudStatus === 'playing' ? 'Pause reading' : 'Resume reading'}
-                  title={readAloudStatus === 'playing' ? 'Pause' : 'Play'}
-                  style={{
-                    backgroundColor: 'var(--control-active-bg)',
-                    color: 'var(--control-active-text)',
-                  }}
-                  className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition hover:opacity-90"
-                >
-                  {readAloudStatus === 'playing' ? (
-                    <Pause className="h-4 w-4" aria-hidden="true" />
-                  ) : (
-                    <Play className="h-4 w-4" aria-hidden="true" />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={onReadStop}
-                  aria-label="Stop reading"
-                  title="Stop"
-                  style={{ color: 'var(--ink)' }}
-                  className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg transition hover:bg-black/10"
-                >
-                  <Square className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  onClick={onToggleReadSpeed}
-                  aria-label={`Reading speed: ${readAloudSpeed}`}
-                  title="Switch between Slow and Normal reading speed"
-                  style={{ color: 'var(--ink)' }}
-                  className="h-8 cursor-pointer rounded-lg px-2 text-xs font-bold transition hover:bg-black/10"
-                >
-                  {readAloudSpeed === 'slow' ? '🐢 Slow' : '🐇 Normal'}
-                </button>
-              </div>
-            )}
+          <button
+            type="button"
+            onClick={onOpenStorySpark}
+            title="Story Spark Dice — roll for a fun story idea"
+            style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
+            className="flex h-10 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition hover:opacity-90"
+          >
+            <span aria-hidden="true">🎲</span>
+            <span className="hidden md:inline">Spark</span>
+          </button>
 
-            <button
-              type="button"
-              onClick={onOpenStorySpark}
-              title="Story Spark Dice — roll for a fun story idea"
-              style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
-              className="flex h-10 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition hover:opacity-90"
-            >
-              <span aria-hidden="true">🎲</span>
-              <span className="hidden md:inline">Spark</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onOpenShare}
-              title="Share story on WhatsApp"
-              className="flex h-10 cursor-pointer items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700"
-            >
-              <Share2 className="h-4 w-4" aria-hidden="true" />
-              <span className="hidden sm:inline">Share</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onOpenShare}
+            title="Share story on WhatsApp"
+            className="flex h-10 cursor-pointer items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700"
+          >
+            <Share2 className="h-4 w-4" aria-hidden="true" />
+            <span className="hidden sm:inline">Share</span>
+          </button>
 
           <Divider />
 
@@ -587,10 +558,11 @@ interface ToolButtonProps {
   label: string;
   active: boolean;
   onClick: () => void;
+  wide?: boolean;
   children: React.ReactNode;
 }
 
-function ToolButton({ label, active, onClick, children }: ToolButtonProps) {
+function ToolButton({ label, active, onClick, wide = false, children }: ToolButtonProps) {
   return (
     <button
       type="button"
@@ -603,7 +575,9 @@ function ToolButton({ label, active, onClick, children }: ToolButtonProps) {
           ? { backgroundColor: 'var(--control-active-bg)', color: 'var(--control-active-text)' }
           : { backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }
       }
-      className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl transition hover:opacity-90"
+      className={`flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl transition hover:opacity-90 ${
+        wide ? 'px-2.5' : 'w-10'
+      }`}
     >
       {children}
     </button>

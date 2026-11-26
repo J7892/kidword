@@ -26,17 +26,6 @@ export const FONTS: FontOption[] = [
   { label: 'Fredoka', value: '"Fredoka", sans-serif' },
 ];
 
-export const COLOR_SWATCHES: ColorSwatch[] = [
-  { name: 'Ink Black', value: '', preview: '#1F242B' },
-  { name: 'Navy Blue', value: '#1D4ED8', preview: '#1D4ED8' },
-  { name: 'Forest Green', value: '#15803D', preview: '#15803D' },
-  { name: 'Berry Purple', value: '#7E22CE', preview: '#7E22CE' },
-  { name: 'Crimson Red', value: '#B91C1C', preview: '#B91C1C' },
-  { name: 'Burnt Orange', value: '#C2410C', preview: '#C2410C' },
-  { name: 'Teal', value: '#0F766E', preview: '#0F766E' },
-  { name: 'Chocolate Brown', value: '#6B3E26', preview: '#6B3E26' },
-];
-
 export const EXTENDED_COLOR_GRID: ColorSwatch[] = [
   // Row 1: Reds, Pinks & Corals
   { name: 'Maroon', value: '#7F1D1D', preview: '#7F1D1D' },

@@ -12,7 +12,7 @@ import { SpellingDetectivePopover } from './components/SpellingDetectivePopover'
 import { StoriesDrawer } from './components/StoriesDrawer';
 import { StorySparkModal } from './components/StorySparkModal';
 import { StoryTitleEditor } from './components/StoryTitleEditor';
-import { Toolbar, type ReadAloudSpeed, type ReadAloudStatus } from './components/Toolbar';
+import { Toolbar } from './components/Toolbar';
 import { WhatsAppShareModal } from './components/WhatsAppShareModal';
 import { FONTS, STORY_EMOJIS, type PageTheme } from './constants/editorConfig';
 import {
@@ -26,13 +26,6 @@ import {
   type StoryRecord,
 } from './db/storiesDb';
 import { FontSize } from './extensions/FontSize';
-import {
-  ReadAloudHighlight,
-  buildReadAloudDecoration,
-  extractSentences,
-  readAloudPluginKey,
-  type SpokenSentence,
-} from './extensions/ReadAloudHighlight';
 import {
   SpellCheck,
   buildSpellDecorations,
@@ -93,8 +86,6 @@ export function App() {
   const [contacts, setContacts] = useState<WhatsAppContact[]>(() => loadWhatsAppContacts());
   const [isParentSettingsOpen, setIsParentSettingsOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
-  const [readAloudStatus, setReadAloudStatus] = useState<ReadAloudStatus>('idle');
-  const [readAloudSpeed, setReadAloudSpeed] = useState<ReadAloudSpeed>('normal');
   const [isSparkOpen, setIsSparkOpen] = useState(false);
   const [pinnedIdea, setPinnedIdea] = useState<string | null>(null);
   const [ideaCollapsed, setIdeaCollapsed] = useState(false);
@@ -114,10 +105,6 @@ export function App() {
   const phoneticResolversRef = useRef(new Map<number, (candidates: string[]) => void>());
   const activeStoryRef = useRef<StoryRecord | null>(null);
   const skipNextSaveRef = useRef(true);
-  const readSentencesRef = useRef<SpokenSentence[]>([]);
-  const readIndexRef = useRef(0);
-  const readActiveSessionRef = useRef(0);
-  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const clickedSpellErrorRef = useRef<ClickedSpellError | null>(null);
 
   useEffect(() => {
@@ -180,7 +167,6 @@ export function App() {
       Color,
       FontFamily,
       FontSize,
-      ReadAloudHighlight,
       SpellCheck.configure({
         surface: 'body',
         onWordClick: (err) => {
@@ -490,123 +476,6 @@ export function App() {
     };
   }, [isPageEmojiOpen]);
 
-  const stopReadAloud = useCallback(() => {
-    readActiveSessionRef.current += 1;
-    activeUtteranceRef.current = null;
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    setReadAloudStatus('idle');
-    if (editor) {
-      const decorations = buildReadAloudDecoration(editor.state.doc, null);
-      editor.view.dispatch(editor.state.tr.setMeta(readAloudPluginKey, { decorations }));
-    }
-  }, [editor]);
-
-  const speakSentenceAt = useCallback(
-    (index: number, speed: ReadAloudSpeed, sessionId: number) => {
-      if (!editor || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-      if (sessionId !== readActiveSessionRef.current) return;
-
-      const sentences = readSentencesRef.current;
-      if (index >= sentences.length) {
-        stopReadAloud();
-        return;
-      }
-
-      const sentence = sentences[index];
-      readIndexRef.current = index;
-
-      const decorations = buildReadAloudDecoration(editor.state.doc, {
-        from: sentence.from,
-        to: sentence.to,
-      });
-      editor.view.dispatch(editor.state.tr.setMeta(readAloudPluginKey, { decorations }));
-
-      const utterance = new SpeechSynthesisUtterance(sentence.text);
-      utterance.lang = 'en-CA';
-      utterance.rate = speed === 'slow' ? 0.78 : 1.0;
-      activeUtteranceRef.current = utterance;
-
-      utterance.onend = () => {
-        if (sessionId !== readActiveSessionRef.current) return;
-        speakSentenceAt(index + 1, speed, sessionId);
-      };
-
-      utterance.onerror = () => {
-        if (sessionId !== readActiveSessionRef.current) return;
-        stopReadAloud();
-      };
-
-      window.speechSynthesis.speak(utterance);
-    },
-    [editor, stopReadAloud]
-  );
-
-  const handleReadPlayPause = useCallback(() => {
-    if (!editor || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-
-    if (readAloudStatus === 'playing') {
-      window.speechSynthesis.pause();
-      setReadAloudStatus('paused');
-      return;
-    }
-
-    if (readAloudStatus === 'paused') {
-      window.speechSynthesis.resume();
-      setReadAloudStatus('playing');
-      window.setTimeout(() => {
-        if (
-          readActiveSessionRef.current > 0 &&
-          !window.speechSynthesis.speaking &&
-          !window.speechSynthesis.pending
-        ) {
-          const sessionId = ++readActiveSessionRef.current;
-          speakSentenceAt(readIndexRef.current, readAloudSpeed, sessionId);
-        }
-      }, 80);
-      return;
-    }
-
-    const bodySentences = extractSentences(editor.state.doc);
-    const cursorPos = editor.state.selection.from;
-    const cleanTitle = title.trim();
-
-    let sentences: SpokenSentence[] = bodySentences;
-    let startIdx = 0;
-
-    if (cursorPos > 1 && bodySentences.length > 0) {
-      const foundIdx = bodySentences.findIndex((s) => s.to >= cursorPos);
-      if (foundIdx !== -1) {
-        startIdx = foundIdx;
-      } else if (cleanTitle) {
-        sentences = [{ from: -1, to: -1, text: cleanTitle }, ...bodySentences];
-      }
-    } else if (cleanTitle) {
-      sentences = [{ from: -1, to: -1, text: cleanTitle }, ...bodySentences];
-    }
-
-    if (sentences.length === 0) return;
-
-    readSentencesRef.current = sentences;
-    window.speechSynthesis.cancel();
-    const sessionId = ++readActiveSessionRef.current;
-    setReadAloudStatus('playing');
-    speakSentenceAt(startIdx, readAloudSpeed, sessionId);
-  }, [editor, readAloudSpeed, readAloudStatus, speakSentenceAt, title]);
-
-  const handleToggleReadSpeed = useCallback(() => {
-    const nextSpeed: ReadAloudSpeed = readAloudSpeed === 'normal' ? 'slow' : 'normal';
-    setReadAloudSpeed(nextSpeed);
-
-    if (readAloudStatus === 'playing' || readAloudStatus === 'paused') {
-      window.speechSynthesis.cancel();
-      const sessionId = ++readActiveSessionRef.current;
-      setReadAloudStatus('playing');
-      speakSentenceAt(readIndexRef.current, nextSpeed, sessionId);
-    }
-  }, [readAloudSpeed, readAloudStatus, speakSentenceAt]);
-
   const handleInsertStoryIdea = useCallback(
     (promptText: string) => {
       setPinnedIdea(promptText);
@@ -619,7 +488,6 @@ export function App() {
   const loadStoryIntoEditor = useCallback(
     (story: StoryRecord) => {
       if (!editor) return;
-      stopReadAloud();
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
@@ -642,7 +510,7 @@ export function App() {
         runSpellCheckNow();
       });
     },
-    [editor, runSpellCheckNow, stopReadAloud]
+    [editor, runSpellCheckNow]
   );
 
   const handleSelectStory = useCallback(
@@ -844,11 +712,6 @@ export function App() {
           onDefaultFontChange={setDefaultFont}
           onOpenStories={() => void handleOpenStories()}
           onCreateStory={() => void handleCreateStory()}
-          readAloudStatus={readAloudStatus}
-          readAloudSpeed={readAloudSpeed}
-          onReadPlayPause={handleReadPlayPause}
-          onReadStop={stopReadAloud}
-          onToggleReadSpeed={handleToggleReadSpeed}
           onOpenStorySpark={() => setIsSparkOpen(true)}
           onOpenShare={() => setIsShareOpen(true)}
           onEnableFocusMode={() => setIsFocusMode(true)}
