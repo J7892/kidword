@@ -25,12 +25,12 @@ const CHARACTERS = [
   'A polite Sasquatch',
   'A clever crow',
   'A teacup-sized fairy',
-  'A space-traveling cat',
+  'A space-travelling cat',
   'A mud-loving hippo',
   'A giggling yeti',
   'A pirate puffin',
   'A snowshoe hare',
-  'A time-traveling hamster',
+  'A time-travelling hamster',
   'A whistling walrus',
 ];
 
@@ -44,7 +44,7 @@ const PLACES = [
   'in an underwater castle',
   'at a midnight bakery',
   'on a Mars playground',
-  'in a cozy log cabin',
+  'in a cosy log cabin',
   'at a glowing ice rink',
   'inside a dinosaur museum',
   'on a runaway school bus',
