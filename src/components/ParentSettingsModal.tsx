@@ -74,6 +74,16 @@ export function ParentSettingsModal({
   // Backup status
   const [backupMsg, setBackupMsg] = useState('');
 
+  // Forgot PIN math challenge
+  const [mathChallenge, setMathChallenge] = useState<{
+    a: number;
+    b: number;
+    c: number;
+    answer: number;
+  } | null>(null);
+  const [mathInput, setMathInput] = useState('');
+  const [mathError, setMathError] = useState('');
+
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
@@ -84,6 +94,9 @@ export function ParentSettingsModal({
       setPinError('');
       setPinSavedMsg('');
       setBackupMsg('');
+      setMathChallenge(null);
+      setMathInput('');
+      setMathError('');
       setPersonalWordsState(loadPersonalWords());
       dialog.showModal();
     } else if (!isOpen && dialog.open) {
@@ -126,7 +139,32 @@ export function ParentSettingsModal({
       setPinError('');
       setPinInput('');
     } else {
-      setPinError('Incorrect PIN. (Default is 1234)');
+      setPinError('Incorrect PIN.');
+    }
+  };
+
+  const openMathChallenge = () => {
+    const a = 13 + Math.floor(Math.random() * 7); // 13..19
+    const b = 6 + Math.floor(Math.random() * 4); // 6..9
+    const c = 5 + Math.floor(Math.random() * 11); // 5..15
+    setMathChallenge({ a, b, c, answer: a * b + c });
+    setMathInput('');
+    setMathError('');
+    setPinError('');
+  };
+
+  const handleResetPinViaMath = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mathChallenge) return;
+    if (Number.parseInt(mathInput.trim(), 10) === mathChallenge.answer) {
+      setParentPin('1234');
+      setMathChallenge(null);
+      setMathInput('');
+      setMathError('');
+      setIsUnlocked(true);
+      setPinSavedMsg('PIN reset to 1234 — you can set a new one below.');
+    } else {
+      setMathError('Not quite — try again!');
     }
   };
 
@@ -239,56 +277,134 @@ export function ParentSettingsModal({
       </div>
 
       {!isUnlocked ? (
-        /* PIN Lock Screen */
-        <form onSubmit={handleUnlock} className="mt-6 space-y-4">
-          <p className="text-sm font-medium" style={{ color: 'var(--ink-muted)' }}>
-            Enter the 4-digit parent PIN to manage WhatsApp contacts, spellchecker options, and
-            backups.
-          </p>
+        mathChallenge ? (
+          /* Grown-Up Math Challenge for PIN Reset */
+          <form onSubmit={handleResetPinViaMath} className="mt-6 space-y-4">
+            <p className="text-sm font-medium" style={{ color: 'var(--ink-muted)' }}>
+              Solve this grown-up math problem to reset your PIN back to <strong>1234</strong> and
+              unlock settings:
+            </p>
 
-          <div>
-            <label htmlFor="parent-pin-input" className="mb-1.5 block text-sm font-bold">
-              4-Digit PIN
-            </label>
-            <input
-              id="parent-pin-input"
-              type="password"
-              inputMode="numeric"
-              maxLength={4}
-              autoFocus
-              value={pinInput}
-              onChange={(e) => {
-                setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4));
-                setPinError('');
-              }}
-              placeholder="••••"
+            <div
               style={{
                 backgroundColor: 'var(--control-bg)',
                 borderColor: 'var(--toolbar-border)',
-                color: 'var(--ink)',
               }}
-              className="h-12 w-40 rounded-xl border px-4 text-center text-2xl font-bold tracking-[0.5em]"
-            />
-            {pinError && <p className="mt-2 text-sm font-semibold text-red-600">{pinError}</p>}
-          </div>
+              className="rounded-2xl border px-4 py-3 text-center text-lg font-bold"
+            >
+              ({mathChallenge.a} × {mathChallenge.b}) + {mathChallenge.c} = ?
+            </div>
 
-          <div className="flex justify-end gap-2.5 pt-2">
-            <button
-              type="button"
-              onClick={() => dialogRef.current?.close()}
-              style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
-              className="h-10 cursor-pointer rounded-xl px-4 text-sm font-bold"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="h-10 cursor-pointer rounded-xl bg-blue-600 px-5 text-sm font-bold text-white hover:bg-blue-700"
-            >
-              Unlock
-            </button>
-          </div>
-        </form>
+            <div>
+              <label htmlFor="parent-math-input" className="mb-1.5 block text-sm font-bold">
+                Answer
+              </label>
+              <input
+                id="parent-math-input"
+                type="text"
+                inputMode="numeric"
+                autoFocus
+                value={mathInput}
+                onChange={(e) => {
+                  setMathInput(e.target.value.replace(/\D/g, ''));
+                  setMathError('');
+                }}
+                placeholder="Enter answer"
+                style={{
+                  backgroundColor: 'var(--control-bg)',
+                  borderColor: 'var(--toolbar-border)',
+                  color: 'var(--ink)',
+                }}
+                className="h-11 w-40 rounded-xl border px-4 text-center text-lg font-bold"
+              />
+              {mathError && (
+                <p className="mt-2 text-sm font-semibold text-red-600">{mathError}</p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMathChallenge(null);
+                  setMathError('');
+                }}
+                style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
+                className="h-10 cursor-pointer rounded-xl px-4 text-sm font-bold"
+              >
+                Back
+              </button>
+              <button
+                type="submit"
+                className="h-10 cursor-pointer rounded-xl bg-blue-600 px-5 text-sm font-bold text-white hover:bg-blue-700"
+              >
+                Reset PIN to 1234
+              </button>
+            </div>
+          </form>
+        ) : (
+          /* PIN Lock Screen */
+          <form onSubmit={handleUnlock} className="mt-6 space-y-4">
+            <p className="text-sm font-medium" style={{ color: 'var(--ink-muted)' }}>
+              Enter the 4-digit parent PIN to manage WhatsApp contacts, spellchecker options, and
+              backups.
+            </p>
+
+            <div>
+              <label htmlFor="parent-pin-input" className="mb-1.5 block text-sm font-bold">
+                4-Digit PIN
+              </label>
+              <input
+                id="parent-pin-input"
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                autoFocus
+                value={pinInput}
+                onChange={(e) => {
+                  setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4));
+                  setPinError('');
+                }}
+                placeholder="••••"
+                style={{
+                  backgroundColor: 'var(--control-bg)',
+                  borderColor: 'var(--toolbar-border)',
+                  color: 'var(--ink)',
+                }}
+                className="h-12 w-40 rounded-xl border px-4 text-center text-2xl font-bold tracking-[0.5em]"
+              />
+              {pinError && <p className="mt-2 text-sm font-semibold text-red-600">{pinError}</p>}
+            </div>
+
+            <div className="flex items-center justify-between gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={openMathChallenge}
+                style={{ color: 'var(--ink-muted)' }}
+                className="cursor-pointer text-xs font-semibold underline decoration-dotted hover:opacity-80"
+              >
+                Forgot PIN?
+              </button>
+
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => dialogRef.current?.close()}
+                  style={{ backgroundColor: 'var(--control-bg)', color: 'var(--ink)' }}
+                  className="h-10 cursor-pointer rounded-xl px-4 text-sm font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="h-10 cursor-pointer rounded-xl bg-blue-600 px-5 text-sm font-bold text-white hover:bg-blue-700"
+                >
+                  Unlock
+                </button>
+              </div>
+            </div>
+          </form>
+        )
       ) : (
         /* Unlocked Settings Panel */
         <div className="mt-5 max-h-[70vh] space-y-6 overflow-y-auto pr-1">
