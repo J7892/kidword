@@ -118,8 +118,8 @@ function evaluateTypedLetters(
 
 /**
  * Builds the initial interactive slots for a target word:
- * - Always provides & locks the 1st letter (idx === 0)
- * - Locks any letters the child already placed in the exact right position
+ * - Locks only the letters the child already placed in the exact right position
+ * - Leaves every wrong or missing letter (including the 1st letter) as a blank to solve
  * - Guarantees at least 1 unlocked blank remains so the word is never auto-solved on open
  */
 function buildInitialSlots(typed: string, target: string): WorkbenchSlot[] {
@@ -127,16 +127,15 @@ function buildInitialSlots(typed: string, target: string): WorkbenchSlot[] {
     const typedChar = typed[idx];
     const isMatched =
       typedChar !== undefined && normalizeChar(typedChar) === normalizeChar(targetChar);
-    const locked = idx === 0 || isMatched;
     return {
       targetChar,
-      value: locked ? targetChar : '',
-      locked,
+      value: isMatched ? targetChar : '',
+      locked: isMatched,
       flash: 'none',
     };
   });
 
-  // Ensure at least 1 blank remains for the child to type (while keeping idx === 0 locked)
+  // Fallback guard so at least 1 blank always remains for the child to type
   if (slots.length > 1 && slots.every((s) => s.locked)) {
     const lastIdx = slots.length - 1;
     slots[lastIdx] = {
