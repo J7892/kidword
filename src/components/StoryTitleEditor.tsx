@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Extension } from '@tiptap/core';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
+import { EditorState } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
 import { SpellCheck, type ClickedSpellError } from '../extensions/SpellCheck';
 
@@ -118,15 +119,22 @@ export function StoryTitleEditor({
     if (currentText === value) return;
 
     syncingExternalRef.current = true;
-    titleEditor.commands.setContent(
+    const doc = titleEditor.state.schema.nodeFromJSON(
       value
         ? {
             type: 'doc',
             content: [{ type: 'paragraph', content: [{ type: 'text', text: value }] }],
           }
-        : '<p></p>',
-      false
+        : {
+            type: 'doc',
+            content: [{ type: 'paragraph' }],
+          }
     );
+    const nextState = EditorState.create({
+      doc,
+      plugins: titleEditor.state.plugins,
+    });
+    titleEditor.view.updateState(nextState);
     syncingExternalRef.current = false;
   }, [value, titleEditor]);
 

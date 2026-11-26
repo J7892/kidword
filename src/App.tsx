@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
+import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model';
+import { EditorState } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -52,6 +54,21 @@ function countWords(text: string): number {
   const trimmed = text.trim();
   if (!trimmed) return 0;
   return trimmed.split(/\s+/).length;
+}
+
+/**
+ * Replaces the editor document with a fresh EditorState so Undo/Redo history
+ * from a previous story never leaks into a newly opened or newly created story.
+ */
+function resetEditorContent(ed: Editor, htmlContent: string): void {
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = htmlContent || '<p></p>';
+  const doc = ProseMirrorDOMParser.fromSchema(ed.state.schema).parse(wrapper);
+  const nextState = EditorState.create({
+    doc,
+    plugins: ed.state.plugins,
+  });
+  ed.view.updateState(nextState);
 }
 
 function computeWordDomRect(view: EditorView, from: number, to: number): DOMRect | null {
@@ -401,7 +418,7 @@ export function App() {
       setTitle(active.title);
       setTheme('warm-paper');
       setDefaultFont(active.fontFamily || FONTS[0].value);
-      editor.commands.setContent(active.htmlContent || '<p></p>', false);
+      resetEditorContent(editor, active.htmlContent || '<p></p>');
       setWordCount(countWords(editor.getText()));
       setIsBodyEmpty(editor.isEmpty);
       setSaveStatus('saved');
@@ -499,7 +516,7 @@ export function App() {
       setTitle(story.title);
       setTheme('warm-paper');
       setDefaultFont(story.fontFamily || FONTS[0].value);
-      editor.commands.setContent(story.htmlContent || '<p></p>', false);
+      resetEditorContent(editor, story.htmlContent || '<p></p>');
       setWordCount(countWords(editor.getText()));
       setIsBodyEmpty(editor.isEmpty);
       setSaveStatus('saved');
