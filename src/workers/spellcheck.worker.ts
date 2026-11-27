@@ -283,13 +283,28 @@ function normalizePhoneticOnset(lower: string): string {
 function matchCapitalization(suggestion: string, originalWord: string): string {
   if (!suggestion || !originalWord) return suggestion;
   if (suggestion === "I'm" || suggestion === "I've" || suggestion === "I'd") return suggestion;
+
   const isFirstUpper =
     originalWord[0] === originalWord[0].toUpperCase() &&
     originalWord[0] !== originalWord[0].toLowerCase();
   const isRestLower = originalWord.slice(1) === originalWord.slice(1).toLowerCase();
+
   if (isFirstUpper && isRestLower) {
     return suggestion[0].toUpperCase() + suggestion.slice(1);
   }
+
+  // When the child typed a lowercase (or Caps-Lock) word, don't force-capitalize
+  // suggestions like "Love" or "Mark" if the lowercase word ("love", "mark") is valid.
+  const suggestionFirstUpper =
+    suggestion[0] === suggestion[0].toUpperCase() &&
+    suggestion[0] !== suggestion[0].toLowerCase();
+  if (suggestionFirstUpper && (!isFirstUpper || !isRestLower)) {
+    const lowerSuggestion = suggestion.toLowerCase();
+    if (spell?.correct(lowerSuggestion)) {
+      return lowerSuggestion;
+    }
+  }
+
   return suggestion;
 }
 
@@ -479,13 +494,16 @@ function checkBlocks(
           continue;
         }
 
-        // 2. Standard Canadian English nspell suggestions (ranking common kid words higher if tied)
+        // 2. Standard Canadian English nspell suggestions (ranking common kid words & lowercase matches higher)
         const suggestions = spell.suggest(lookupWord);
         if (suggestions.length > 0) {
-          const commonMatch = suggestions
-            .slice(0, 5)
-            .find((s) => COMMON_KID_WORDS.has(s.toLowerCase()));
-          const best = commonMatch ?? suggestions[0];
+          const top = suggestions.slice(0, 6);
+          const commonMatch = top.find((s) => COMMON_KID_WORDS.has(s.toLowerCase()));
+          const lowerMatch =
+            normalized === lower
+              ? top.find((s) => s[0] === s[0].toLowerCase() || spell!.correct(s.toLowerCase()))
+              : undefined;
+          const best = commonMatch ?? lowerMatch ?? suggestions[0];
           errors.push({
             from: block.pos + start,
             to: block.pos + end,
